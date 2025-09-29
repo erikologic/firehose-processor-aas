@@ -52,7 +52,7 @@ func (mc *MessageCounter) Run(ctx context.Context) error {
 
 	mc.logger.Info("message counter started", "subjects", "atproto.firehose.*")
 
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -62,7 +62,7 @@ func (mc *MessageCounter) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			mc.logger.Info("message counter shutting down")
 			return nil
-		}
+	}
 	}
 }
 

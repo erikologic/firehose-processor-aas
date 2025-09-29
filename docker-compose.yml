@@ -67,25 +67,24 @@ services:
     build:
       context: .
       dockerfile: cmd/firehose-subscriber/Dockerfile
-    container_name: fpaas-firehose-subscriber
     depends_on:
       nats:
         condition: service_healthy
     environment:
-      - RELAY_HOST=wss://bsky.network
-      - NATS_URL=nats://nats:4222
+      RELAY_HOST: wss://bsky.network
+      NATS_URL: nats://nats:4222
     restart: unless-stopped
 
   message-counter:
     build:
       context: .
       dockerfile: cmd/message-counter/Dockerfile
-    container_name: fpaas-message-counter
     depends_on:
       nats:
         condition: service_healthy
     environment:
-      - NATS_URL=nats://nats:4222
+      NATS_URL: nats://nats:4222
+      MESSAGE_COUNTER_INSTANCES: 10
     restart: unless-stopped
 
 volumes:
