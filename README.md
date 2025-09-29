@@ -50,16 +50,33 @@ This service enables developers to build ATProto applications without deep distr
 
 ## Development Setup
 
-### Quick Start
+### Project Structure
 
-Start the complete development stack with monitoring:
-
-```bash
-docker-compose up -d
+```
+├── cmd/
+│   ├── firehose-subscriber/    # ATProto firehose subscriber service
+│   └── message-counter/        # Message counting and stats service
+├── internal/
+│   └── pkg/
+│       ├── firehose/          # Firehose connection and processing
+│       └── counter/           # Message counting logic
+├── grafana/                   # Grafana dashboard provisioning
+├── docker-compose.yml         # Complete development stack
+└── README.md
 ```
 
-This launches:
+### Quick Start
+
+Start the complete end-to-end system:
+
+```bash
+DOCKER_BUILDKIT=1 docker-compose up --build -d
+```
+
+This launches the complete FPaaS pipeline:
 - **NATS Server**: Message broker on ports 4222 (client) and 8222 (monitoring)
+- **Firehose Subscriber**: Connects to bsky.network and streams to NATS
+- **Message Counter**: Subscribes to firehose events and emits 60-second statistics
 - **Prometheus**: Metrics collection on port 9090
 - **NATS Prometheus Exporter**: Metrics bridge on port 7777
 - **Grafana**: Monitoring dashboards on port 3001
@@ -91,6 +108,40 @@ The stack includes comprehensive monitoring with **automatic dashboard provision
 - **System**: Go runtime metrics, process statistics
 - **Network**: Bytes transferred, connection lifecycle
 
+### Live ATProto Integration
+
+The system processes live ATProto firehose data from bsky.network:
+
+```bash
+# View real-time logs
+docker-compose logs -f firehose-subscriber message-counter
+```
+
+Expected output:
+```
+firehose-subscriber  | time=... level=INFO msg="firehose stats" total_events=3212
+message-counter      | time=... level=INFO msg="message counter stats" period=60.0s total=21003 raw=21003
+```
+
+**Performance**: Processes ~350 messages/second from live bsky.network firehose.
+
+### Manual Development
+
+For local development without Docker:
+
+```bash
+# Start infrastructure
+docker-compose up -d nats prometheus grafana nats-exporter
+
+# Build services
+go build -o bin/firehose-subscriber ./cmd/firehose-subscriber
+go build -o bin/message-counter ./cmd/message-counter
+
+# Run services
+./bin/firehose-subscriber wss://bsky.network nats://localhost:4222 &
+./bin/message-counter nats://localhost:4222 &
+```
+
 ### Testing
 
 Run the NATS integration tests:
@@ -106,3 +157,10 @@ Tests include:
 - High-volume message throughput
 
 **Note**: Test activity will appear in the monitoring dashboards, showing real-time metrics as tests execute.
+
+### Container Architecture
+
+The Dockerfiles use multi-stage builds with aggressive caching:
+- **Builder stage**: Full Go toolchain with dependency caching
+- **Runtime stage**: Minimal `scratch` images (~5MB) with only the binary and CA certificates
+- **Environment variables**: Support for both Docker and CLI configuration
