@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   nats:
     image: nats:2.10-alpine
@@ -15,10 +13,57 @@ services:
     volumes:
       - nats_data:/data
     healthcheck:
-      test: ["CMD", "nats", "server", "check", "connection"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8222/varz"]
       interval: 10s
       timeout: 5s
       retries: 3
 
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:latest
+    container_name: fpaas-nats-exporter
+    ports:
+      - "7777:7777"
+    command:
+      - "-varz"
+      - "-jsz=all"
+      - "http://nats:8222"
+    depends_on:
+      - nats
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: fpaas-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=200h"
+      - "--web.enable-lifecycle"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: fpaas-grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+
 volumes:
   nats_data:
+  prometheus_data:
+  grafana_data:

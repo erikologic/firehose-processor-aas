@@ -47,3 +47,62 @@ Process "like" events from the ATProto Firehose:
 - **Developer Experience**: Simple API configuration vs. complex stream processing setup
 
 This service enables developers to build ATProto applications without deep distributed systems expertise, lowering the barrier to entry for the decentralized social networking ecosystem.
+
+## Development Setup
+
+### Quick Start
+
+Start the complete development stack with monitoring:
+
+```bash
+docker-compose up -d
+```
+
+This launches:
+- **NATS Server**: Message broker on ports 4222 (client) and 8222 (monitoring)
+- **Prometheus**: Metrics collection on port 9090
+- **NATS Prometheus Exporter**: Metrics bridge on port 7777
+- **Grafana**: Monitoring dashboards on port 3001
+
+### Monitoring & Observability
+
+The stack includes comprehensive monitoring with **automatic dashboard provisioning**:
+
+#### Access Points
+- **Grafana Dashboards**: http://localhost:3001 (admin/admin)
+- **Prometheus Metrics**: http://localhost:9090
+- **NATS Monitoring**: http://localhost:8222
+
+#### Pre-configured Dashboards
+
+**NATS Server Dashboard** (`/d/nats-server/nats-server-dashboard`):
+- Server performance (CPU, Memory usage)
+- Message throughput (Messages In/Out, Bytes In/Out)
+- Client metrics (Connections, Subscriptions, Slow Consumers)
+
+**NATS JetStream Dashboard** (`/d/nats-jetstream/nats-jetstream-dashboard`):
+- Stream and consumer counts
+- Storage utilization
+- Message persistence metrics
+
+#### Metrics Available
+- **Core NATS**: Connection counts, message rates, memory/CPU usage
+- **JetStream**: Stream storage, consumer lag, persistence statistics
+- **System**: Go runtime metrics, process statistics
+- **Network**: Bytes transferred, connection lifecycle
+
+### Testing
+
+Run the NATS integration tests:
+
+```bash
+go test -v
+```
+
+Tests include:
+- Basic connectivity and pub/sub
+- Queue groups for load balancing
+- Request/reply patterns
+- High-volume message throughput
+
+**Note**: Test activity will appear in the monitoring dashboards, showing real-time metrics as tests execute.
