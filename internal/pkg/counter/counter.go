@@ -14,6 +14,7 @@ import (
 type MessageCounter struct {
 	logger   *slog.Logger
 	natsConn *nats.Conn
+	js       nats.JetStreamContext
 
 	avgCount   int64
 	totalCount int64
@@ -34,23 +35,31 @@ func NewMessageCounter(natsURL string, logger *slog.Logger) (*MessageCounter, er
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
 
+	js, err := nc.JetStream()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create JetStream context: %w", err)
+	}
+
 	return &MessageCounter{
 		logger:    logger,
 		natsConn:  nc,
+		js:        js,
 		lastReset: time.Now(),
 	}, nil
 }
 
 func (mc *MessageCounter) Run(ctx context.Context) error {
-	sub, err := mc.natsConn.Subscribe("atproto.firehose.>", func(m *nats.Msg) {
+	consumerName := fmt.Sprintf("counter-%d", time.Now().UnixNano())
+	sub, err := mc.js.Subscribe("atproto.firehose.>", func(m *nats.Msg) {
 		mc.handleMessage(m)
-	})
+		m.Ack()
+	}, nats.Durable(consumerName), nats.DeliverAll())
 	if err != nil {
-		return fmt.Errorf("failed to subscribe: %w", err)
+		return fmt.Errorf("failed to subscribe to JetStream: %w", err)
 	}
 	defer sub.Unsubscribe()
 
-	mc.logger.Info("message counter started", "subjects", "atproto.firehose.*")
+	mc.logger.Info("message counter started", "subjects", "atproto.firehose.>", "consumer", consumerName)
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -101,8 +110,8 @@ func (mc *MessageCounter) emitStats() {
 		return
 	}
 
-	if err := mc.natsConn.Publish("atproto.stats.counter", statsData); err != nil {
-		mc.logger.Error("failed to publish stats", "error", err)
+	if _, err := mc.js.Publish("atproto.stats.counter", statsData); err != nil {
+		mc.logger.Error("failed to publish stats to JetStream", "error", err)
 	}
 
 	atomic.StoreInt64(&mc.totalCount, 0)

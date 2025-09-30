@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
@@ -15,6 +16,7 @@ import (
 type SimpleSubscriber struct {
 	logger      *slog.Logger
 	natsConn    *nats.Conn
+	js          nats.JetStreamContext
 	relayHost   string
 	totalEvents int64
 }
@@ -25,9 +27,31 @@ func NewSimpleSubscriber(relayHost, natsURL string, logger *slog.Logger) (*Simpl
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
 
+	js, err := nc.JetStream()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create JetStream context: %w", err)
+	}
+
+	streamName := "ATPROTO_FIREHOSE"
+	_, err = js.StreamInfo(streamName)
+	if err != nil {
+		logger.Info("creating JetStream stream", "name", streamName)
+		_, err = js.AddStream(&nats.StreamConfig{
+			Name:      streamName,
+			Subjects:  []string{"atproto.firehose.>"},
+			Retention: nats.LimitsPolicy,
+			MaxAge:    5 * time.Minute,
+			Storage:   nats.MemoryStorage,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create stream: %w", err)
+		}
+	}
+
 	return &SimpleSubscriber{
 		logger:    logger,
 		natsConn:  nc,
+		js:        js,
 		relayHost: relayHost,
 	}, nil
 }
@@ -63,9 +87,9 @@ func (s *SimpleSubscriber) Run(ctx context.Context) error {
 
 			atomic.AddInt64(&s.totalEvents, 1)
 
-			err = s.natsConn.Publish("atproto.firehose.raw", message)
+			_, err = s.js.Publish("atproto.firehose.raw", message)
 			if err != nil {
-				s.logger.Error("failed to publish to NATS", "error", err)
+				s.logger.Error("failed to publish to JetStream", "error", err)
 			}
 		}
 	}
