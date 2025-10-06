@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/carlmjohnson/versioninfo"
 	"github.com/eurosky/firehose-processor-aas/internal/pkg/firehose"
@@ -16,8 +17,8 @@ import (
 
 func main() {
 	app := &cli.App{
-		Name:    "firehose-subscriber",
-		Usage:   "ATProto firehose subscriber service",
+		Name:    "shuffler",
+		Usage:   "ATProto firehose to NATS shuffler service",
 		Version: versioninfo.Short(),
 		Action:  run,
 		Flags: []cli.Flag{
@@ -63,29 +64,23 @@ func run(cctx *cli.Context) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		total := s.GetTotalEvents()
+		fmt.Fprintf(w, "%d", total)
+	})
+
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				total := s.GetTotalEvents()
-				logger.Info("firehose stats", "total_events", total)
-			case <-ctx.Done():
-				return
-			}
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			logger.Error("metrics server failed", "error", err)
 		}
 	}()
 
 	setupSignalHandler(ctx, cancel, logger)
 
-	logger.Info("starting firehose subscriber", "relay", relayHost, "nats", natsURL)
 	if err := s.Run(ctx); err != nil {
-		logger.Error("subscriber failed", "error", err)
 		return err
 	}
 
-	logger.Info("firehose subscriber shutting down")
 	return nil
 }
 
@@ -96,7 +91,6 @@ func setupSignalHandler(ctx context.Context, cancel context.CancelFunc, logger *
 	go func() {
 		select {
 		case <-sigCh:
-			logger.Info("shutting down...")
 			cancel()
 		case <-ctx.Done():
 		}

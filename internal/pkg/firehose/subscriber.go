@@ -2,6 +2,8 @@ package firehose
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -37,11 +39,12 @@ func NewSimpleSubscriber(relayHost, natsURL string, logger *slog.Logger) (*Simpl
 	if err != nil {
 		logger.Info("creating JetStream stream", "name", streamName)
 		_, err = js.AddStream(&nats.StreamConfig{
-			Name:      streamName,
-			Subjects:  []string{"atproto.firehose.>"},
-			Retention: nats.LimitsPolicy,
-			MaxAge:    5 * time.Minute,
-			Storage:   nats.MemoryStorage,
+			Name:       streamName,
+			Subjects:   []string{"atproto.firehose.>"},
+			Retention:  nats.LimitsPolicy,
+			MaxAge:     5 * time.Minute,
+			Storage:    nats.MemoryStorage,
+			Duplicates: 5 * time.Minute,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create stream: %w", err)
@@ -64,7 +67,6 @@ func (s *SimpleSubscriber) Run(ctx context.Context) error {
 	}
 	u.Path = "xrpc/com.atproto.sync.subscribeRepos"
 
-	s.logger.Info("connecting to ATProto firehose", "url", u.String())
 	con, _, err := dialer.Dial(u.String(), http.Header{
 		"User-Agent": []string{"fpaas-firehose-subscriber/1.0"},
 	})
@@ -76,20 +78,21 @@ func (s *SimpleSubscriber) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			s.logger.Info("shutting down firehose subscriber")
 			return nil
 		default:
 			_, message, err := con.ReadMessage()
 			if err != nil {
-				s.logger.Error("error reading message", "error", err)
 				return err
 			}
 
 			atomic.AddInt64(&s.totalEvents, 1)
 
-			_, err = s.js.Publish("atproto.firehose.raw", message)
+			hash := sha256.Sum256(message)
+			msgID := hex.EncodeToString(hash[:])
+
+			_, err = s.js.Publish("atproto.firehose.raw", message, nats.MsgId(msgID))
 			if err != nil {
-				s.logger.Error("failed to publish to JetStream", "error", err)
+				return err
 			}
 		}
 	}

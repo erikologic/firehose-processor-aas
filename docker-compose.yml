@@ -7,11 +7,12 @@ services:
       - "6222:6222"
       - "8222:8222"
     command:
-      - "-m"
-      - "8222"
+      - "-c"
+      - "/etc/nats/nats.conf"
     restart: unless-stopped
     volumes:
-      - nats_data:/data
+      - ./nats.conf:/etc/nats/nats.conf:ro
+      - nats_jetstream_data:/data
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8222/varz"]
       interval: 10s
@@ -63,31 +64,41 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     restart: unless-stopped
 
-  firehose-subscriber:
+  shuffler:
     build:
       context: .
-      dockerfile: cmd/firehose-subscriber/Dockerfile
+      dockerfile: cmd/shuffler/Dockerfile
+    container_name: fpaas-shuffler
+    ports:
+      - "8080:8080"
     depends_on:
       nats:
         condition: service_healthy
     environment:
       RELAY_HOST: wss://bsky.network
       NATS_URL: nats://nats:4222
+      LOG_LEVEL: info
     restart: unless-stopped
 
-  message-counter:
+  consumer:
     build:
       context: .
-      dockerfile: cmd/message-counter/Dockerfile
+      dockerfile: cmd/consumer/Dockerfile
+    container_name: fpaas-consumer
+    ports:
+      - "8082:8082"
     depends_on:
       nats:
         condition: service_healthy
     environment:
       NATS_URL: nats://nats:4222
-      MESSAGE_COUNTER_INSTANCES: 10
+      CONSUMER_COUNT: 100
+      POLL_INTERVAL_SECONDS: 60
+      BATCH_SIZE: 100
+      LOG_LEVEL: info
     restart: unless-stopped
 
 volumes:
-  nats_data:
+  nats_jetstream_data:
   prometheus_data:
   grafana_data:

@@ -1,9 +1,10 @@
 module github.com/eurosky/firehose-processor-aas
 
-go 1.24.3
+go 1.23
 
 require (
 	github.com/carlmjohnson/versioninfo v0.22.5
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/nats-io/nats.go v1.46.0
 	github.com/urfave/cli/v2 v2.25.7
