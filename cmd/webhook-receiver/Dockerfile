@@ -16,22 +16,19 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go mod tidy && \
-    CGO_ENABLED=0 go build -installsuffix cgo -o shuffler ./cmd/shuffler
+    CGO_ENABLED=0 go build -installsuffix cgo -o webhook-receiver ./cmd/webhook-receiver
 
-# Final stage - minimal alpine image for proper filesystem
-FROM alpine:latest
+# Final stage - minimal image
+FROM scratch
 
 # Copy ca certificates from builder
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # Copy binary from builder
-COPY --from=builder /app/shuffler /shuffler
-
-# Create data directory with proper permissions
-RUN mkdir -p /data && chmod 777 /data
+COPY --from=builder /app/webhook-receiver /webhook-receiver
 
 # Switch to non-root user (nobody)
 USER 65534
 
 # Default command
-ENTRYPOINT ["/shuffler"]
+ENTRYPOINT ["/webhook-receiver"]

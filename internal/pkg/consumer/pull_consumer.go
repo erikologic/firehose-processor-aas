@@ -1,10 +1,13 @@
 package consumer
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"net/http"
 	"sync/atomic"
 	"time"
 
@@ -12,17 +15,21 @@ import (
 )
 
 type PullConsumer struct {
-	logger       *slog.Logger
-	natsConn     *nats.Conn
-	js           nats.JetStreamContext
-	sub          *nats.Subscription
-	pollInterval time.Duration
-	batchSize    int
-	totalCount   int64
-	consumerName string
+	logger         *slog.Logger
+	natsConn       *nats.Conn
+	js             nats.JetStreamContext
+	sub            *nats.Subscription
+	pollInterval   time.Duration
+	jitteredPoll   time.Duration
+	batchSize      int
+	totalCount     int64
+	consumerName   string
+	webhookURL     string
+	useWebhook     bool
+	httpClient     *http.Client
 }
 
-func NewPullConsumer(natsURL string, consumerName string, pollInterval time.Duration, batchSize int, logger *slog.Logger) (*PullConsumer, error) {
+func NewPullConsumer(natsURL string, consumerName string, pollInterval time.Duration, batchSize int, webhookURL string, useWebhook bool, logger *slog.Logger) (*PullConsumer, error) {
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
@@ -34,25 +41,20 @@ func NewPullConsumer(natsURL string, consumerName string, pollInterval time.Dura
 		return nil, fmt.Errorf("failed to create JetStream context: %w", err)
 	}
 
-	// Create durable pull consumer
-	streamName := "ATPROTO_FIREHOSE"
-	_, err = js.AddConsumer(streamName, &nats.ConsumerConfig{
-		Durable:       consumerName,
-		AckPolicy:     nats.AckExplicitPolicy,
-		DeliverPolicy: nats.DeliverAllPolicy,
-		FilterSubject: "atproto.firehose.>",
-	})
-	if err != nil && err != nats.ErrConsumerNameAlreadyInUse {
-		nc.Close()
-		return nil, fmt.Errorf("failed to create consumer: %w", err)
-	}
-
-	// Subscribe to the durable consumer
-	sub, err := js.PullSubscribe("atproto.firehose.>", consumerName, nats.Bind(streamName, consumerName))
+	// Subscribe to stream with unique durable consumer name
+	// Each unique consumer name creates an independent consumer that receives ALL messages
+	// This is the broadcast/fan-out pattern - each consumer tracks its own position
+	sub, err := js.PullSubscribe("atproto.firehose.>", consumerName, nats.DeliverNew(), nats.AckExplicit())
 	if err != nil {
 		nc.Close()
 		return nil, fmt.Errorf("failed to subscribe: %w", err)
 	}
+
+	// Calculate jitter once at startup (±50% random variation)
+	// This spreads out consumers but keeps their timing stable
+	variance := float64(pollInterval) * 0.5
+	offset := (rand.Float64() * 2 * variance) - variance
+	jitteredPoll := pollInterval + time.Duration(offset)
 
 	return &PullConsumer{
 		logger:       logger,
@@ -60,25 +62,24 @@ func NewPullConsumer(natsURL string, consumerName string, pollInterval time.Dura
 		js:           js,
 		sub:          sub,
 		pollInterval: pollInterval,
+		jitteredPoll: jitteredPoll,
 		batchSize:    batchSize,
 		consumerName: consumerName,
+		webhookURL:   webhookURL,
+		useWebhook:   useWebhook,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
 	}, nil
 }
 
 func (c *PullConsumer) Run(ctx context.Context) error {
-	// Add jitter to poll interval (±20% random variation)
-	jitter := func() time.Duration {
-		variance := float64(c.pollInterval) * 0.2
-		offset := (rand.Float64() * 2 * variance) - variance
-		return c.pollInterval + time.Duration(offset)
-	}
-
-	ticker := time.NewTicker(jitter())
+	ticker := time.NewTicker(c.jitteredPoll)
 	defer ticker.Stop()
 
 	c.logger.Info("pull consumer started",
 		"consumer", c.consumerName,
-		"poll_interval", c.pollInterval,
+		"poll_interval", c.jitteredPoll,
 		"batch_size", c.batchSize,
 	)
 
@@ -87,10 +88,7 @@ func (c *PullConsumer) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			// Reset ticker with new jittered interval
-			ticker.Reset(jitter())
-
-			// Pull messages
+			// Pull messages at jittered interval
 			msgs, err := c.sub.Fetch(c.batchSize, nats.MaxWait(5*time.Second))
 			if err != nil {
 				if err == nats.ErrTimeout {
@@ -101,9 +99,27 @@ func (c *PullConsumer) Run(ctx context.Context) error {
 				continue
 			}
 
-			// Process messages
+			// Send batch to webhook if configured
+			if len(msgs) > 0 && c.useWebhook && c.webhookURL != "" {
+				if err := c.sendWebhook(msgs); err != nil {
+					c.logger.Warn("webhook delivery failed",
+						"consumer", c.consumerName,
+						"error", err,
+						"batch_size", len(msgs),
+					)
+					// NAK messages so they can be redelivered
+					for _, msg := range msgs {
+						if nakErr := msg.NakWithDelay(5 * time.Second); nakErr != nil {
+							c.logger.Warn("nak error", "error", nakErr)
+						}
+					}
+					// Don't increment counter or ack failed messages
+					continue
+				}
+			}
+
+			// ACK messages after successful webhook delivery (or if webhook is disabled)
 			for _, msg := range msgs {
-				// Simple processing: just count and ack
 				atomic.AddInt64(&c.totalCount, 1)
 
 				if err := msg.Ack(); err != nil {
@@ -134,4 +150,51 @@ func (c *PullConsumer) Close() error {
 
 func (c *PullConsumer) GetTotalCount() int64 {
 	return atomic.LoadInt64(&c.totalCount)
+}
+
+func (c *PullConsumer) sendWebhook(msgs []*nats.Msg) error {
+	// Build payload - array of base64 encoded messages
+	type WebhookPayload struct {
+		Consumer string   `json:"consumer"`
+		Events   [][]byte `json:"events"`
+		Count    int      `json:"count"`
+	}
+
+	events := make([][]byte, len(msgs))
+	for i, msg := range msgs {
+		events[i] = msg.Data
+	}
+
+	payload := WebhookPayload{
+		Consumer: c.consumerName,
+		Events:   events,
+		Count:    len(msgs),
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	// Create request
+	req, err := http.NewRequest(http.MethodPost, c.webhookURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Event-Count", fmt.Sprintf("%d", len(msgs)))
+
+	// Send request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("webhook returned non-OK status: %d", resp.StatusCode)
+	}
+
+	return nil
 }

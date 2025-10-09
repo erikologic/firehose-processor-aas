@@ -14,3 +14,11 @@ scrape_configs:
   - job_name: 'nats'
     static_configs:
       - targets: ['nats-exporter:7777']
+
+  - job_name: 'shuffler'
+    static_configs:
+      - targets: ['shuffler:8080']
+
+  - job_name: 'webhook-receiver'
+    static_configs:
+      - targets: ['webhook-receiver:8090']

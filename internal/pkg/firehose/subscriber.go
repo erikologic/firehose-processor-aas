@@ -1,6 +1,7 @@
 package firehose
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bluesky-social/indigo/events"
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
 )
@@ -21,6 +23,7 @@ type SimpleSubscriber struct {
 	js          nats.JetStreamContext
 	relayHost   string
 	totalEvents int64
+	lastCursor  int64
 }
 
 func NewSimpleSubscriber(relayHost, natsURL string, logger *slog.Logger) (*SimpleSubscriber, error) {
@@ -85,6 +88,16 @@ func (s *SimpleSubscriber) Run(ctx context.Context) error {
 				return err
 			}
 
+			// Extract sequence number using indigo SDK
+			var evt events.XRPCStreamEvent
+			reader := bytes.NewReader(message)
+			if err := evt.Deserialize(reader); err == nil {
+				seq := events.SequenceForEvent(&evt)
+				if seq > 0 {
+					atomic.StoreInt64(&s.lastCursor, seq)
+				}
+			}
+
 			atomic.AddInt64(&s.totalEvents, 1)
 
 			hash := sha256.Sum256(message)
@@ -105,4 +118,8 @@ func (s *SimpleSubscriber) Close() error {
 
 func (s *SimpleSubscriber) GetTotalEvents() int64 {
 	return atomic.LoadInt64(&s.totalEvents)
+}
+
+func (s *SimpleSubscriber) GetLastCursor() int64 {
+	return atomic.LoadInt64(&s.lastCursor)
 }

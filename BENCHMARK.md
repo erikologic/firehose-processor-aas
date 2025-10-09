@@ -1,219 +1,326 @@
-# FPaaS PoC Benchmark Configuration
+# Firehose Processor Benchmarking
 
-## Current Setup
+## Overview
 
-### Architecture
+This document describes the benchmarking methodology for the ATProto Firehose Processor as a Service (FPaaS) system. The goal is to measure throughput, resource utilization, and scaling characteristics under various consumer counts and configurations.
+
+## Architecture Components
+
 ```
-ATProto Firehose (bsky.network)
-        ↓
-    Shuffler (1 instance)
-        ↓
-NATS JetStream (single node, in-memory)
-        ↓
-   Consumers (100 instances, pull-based)
+ATProto Firehose → [Shuffler] → [NATS JetStream] → [100-5000 Consumers] → [Webhook Receiver]
 ```
 
-### Configuration
+1. **Shuffler** (Firehose Consumer): Subscribes to ATProto firehose, publishes to NATS
+2. **NATS JetStream**: Message queue with deduplication and persistence
+3. **Consumers**: Pull-based consumers that fetch batches from NATS
+4. **Webhook Receiver**: Endpoint that receives batched events from consumers
 
-**Shuffler:**
-- Image: `cmd/shuffler/Dockerfile`
-- Relay: `wss://bsky.network`
-- NATS URL: `nats://nats:4222`
-- Metrics: `http://localhost:8080/metrics`
+## Metrics Collection
 
-**NATS JetStream:**
-- Retention: 5 minutes
-- Storage: In-memory (`nats.MemoryStorage`)
-- Max Memory: 2GB
-- Stream: `ATPROTO_FIREHOSE`
-- Subjects: `atproto.firehose.>`
-- Deduplication Window: 5 minutes
+**Collection Strategy**:
+- Sample metrics every 5 seconds during the test window (e.g., 5 minutes)
+- At test completion, aggregate all samples into averages
+- Output **one row per scenario** with aggregated metrics
 
-**Consumers:**
-- Count: **Configurable via `CONSUMER_COUNT`** (default: 100)
-- Poll Interval: **Configurable via `POLL_INTERVAL_SECONDS`** (default: 60)
-- Batch Size: **Configurable via `BATCH_SIZE`** (default: 100)
-- Jitter: ±20% random variation on poll interval
-- Mode: Pull-based (durable consumers)
-- Metrics: `http://localhost:8082/metrics`
+**Aggregation Methods**:
+- **Totals** (message counts, bytes): Final value - initial value (total during window)
+- **Gauges** (CPU%, Memory): Average of all samples
+- **Prometheus**: Use Prometheus `avg_over_time()` queries when available
 
-### Environment Variables
+### 1. System Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CONSUMER_COUNT` | 1 | Number of consumer instances to spawn |
-| `POLL_INTERVAL_SECONDS` | 60 | Seconds between pull requests (with ±20% jitter) |
-| `BATCH_SIZE` | 100 | Number of messages to fetch per pull |
-| `LOG_LEVEL` | info | Logging verbosity (error, warn, info, debug) |
-| `NATS_URL` | nats://nats:4222 | NATS server connection URL |
+- `n_consumers`: Number of consumer instances
+- `use_webhook`: Whether webhooks are enabled
+- `batch_size`: Messages per fetch
+- `poll_interval`: Base poll interval (before jitter)
+- `test_duration_sec`: Length of test in seconds
 
-## Running Benchmarks
+### 2. NATS Server Metrics (from NATS monitoring endpoint)
 
-### Quick Start
-```bash
-# Default: 100 consumers, 60s poll interval
-DOCKER_BUILDKIT=1 docker compose up --build -d
+| Metric | Description | Aggregation |
+|--------|-------------|-------------|
+| `nats_cpu_percent_avg` | Average CPU utilization over test window | Avg of samples from `/varz` or Prometheus `avg_over_time(nats_cpu[5m])` |
+| `nats_mem_bytes_avg` | Average memory usage | Avg of samples from `/varz` |
+| `nats_net_in_bytes_total` | Total network bytes received | `total_in_end - total_in_start` from `/varz` |
+| `nats_net_out_bytes_total` | Total network bytes sent | `total_out_end - total_out_start` from `/varz` |
+| `nats_msgs_in_total` | Total messages received | `total_msgs_in_end - total_msgs_in_start` from `/varz` |
+| `nats_msgs_out_total` | Total messages sent | `total_msgs_out_end - total_msgs_out_start` from `/varz` |
+| `nats_cpu_per_consumer` | Avg CPU / n_consumers | Calculated |
+| `nats_mem_per_consumer` | Avg Mem / n_consumers | Calculated |
+| `nats_net_in_per_consumer` | Net In total / n_consumers | Calculated |
+| `nats_net_out_per_consumer` | Net Out total / n_consumers | Calculated |
+| `nats_msgs_in_per_consumer` | Msgs In total / n_consumers | Calculated |
+| `nats_msgs_out_per_consumer` | Msgs Out total / n_consumers | Calculated |
 
-# Check status
-docker compose ps
-docker compose logs -f shuffler consumer
+### 3. JetStream Metrics (from NATS JetStream monitoring)
 
-# View metrics
-curl http://localhost:8080/metrics  # Shuffler published events
-curl http://localhost:8082/metrics  # Consumer processed events
-curl http://localhost:8222/jsz | jq  # JetStream stats
-```
+| Metric | Description | Aggregation |
+|--------|-------------|-------------|
+| `js_pending_messages_avg` | Average pending messages over window | Avg of samples from `/jsz` |
+| `js_pending_acks_avg` | Average pending acknowledgments | Avg of samples from `/jsz` |
+| `js_pending_messages_per_consumer` | Avg pending / n_consumers | Calculated |
+| `js_pending_acks_per_consumer` | Avg pending acks / n_consumers | Calculated |
 
-### Custom Configurations
+### 4. Shuffler (Firehose Consumer) Metrics
 
-**Test with 10 consumers, 30s poll interval:**
-```bash
-# Edit docker-compose.yml environment variables:
-environment:
-  CONSUMER_COUNT: 10
-  POLL_INTERVAL_SECONDS: 30
-  BATCH_SIZE: 50
+| Metric | Description | Aggregation |
+|--------|-------------|-------------|
+| `shuffler_messages_read_total` | Total messages read from firehose | `total_read_end - total_read_start` from `/metrics` |
+| `shuffler_messages_written_total` | Total messages published to NATS | `total_written_end - total_written_start` from `/metrics` |
+| `shuffler_cpu_percent_avg` | Average CPU utilization | Avg of samples from Docker stats or Prometheus |
+| `shuffler_mem_bytes_avg` | Average memory usage | Avg of samples from Docker stats |
+| `shuffler_net_io_bytes_total` | Total network I/O bytes | `total_io_end - total_io_start` from Docker stats |
 
-# Restart
-docker compose up --build -d
-```
+### 5. Consumer Service Metrics
 
-**Test with 500 consumers, 120s poll interval:**
-```bash
-environment:
-  CONSUMER_COUNT: 500
-  POLL_INTERVAL_SECONDS: 120
-  BATCH_SIZE: 200
-```
+**Note**: The consumer service is a single Docker container running `n_consumers` instances internally.
 
-**Test with 1000 consumers (stress test):**
-```bash
-environment:
-  CONSUMER_COUNT: 1000
-  POLL_INTERVAL_SECONDS: 60
-  BATCH_SIZE: 100
-```
+| Metric | Description | Aggregation |
+|--------|-------------|-------------|
+| `consumer_messages_total` | Total messages processed | `total_processed_end - total_processed_start` from `/metrics` |
+| `consumer_messages_per_consumer` | Messages total / n_consumers | Calculated |
+| `consumer_cpu_percent_avg` | Average CPU for entire container | Avg of samples from Docker stats or Prometheus |
+| `consumer_mem_bytes_avg` | Average memory for entire container | Avg of samples from Docker stats |
+| `consumer_net_io_bytes_total` | Total network I/O bytes | `total_io_end - total_io_start` from Docker stats |
+| `consumer_cpu_per_consumer` | Avg CPU / n_consumers | Calculated |
+| `consumer_mem_per_consumer` | Avg Mem / n_consumers | Calculated |
+| `consumer_net_io_per_consumer` | Net I/O total / n_consumers | Calculated |
 
-### Monitoring
+### 6. Webhook Receiver Metrics
 
-**Grafana Dashboards:**
-- URL: http://localhost:3001
-- Login: admin/admin
-- Pre-configured NATS dashboards
+| Metric | Description | Aggregation |
+|--------|-------------|-------------|
+| `webhook_calls_total` | Total webhook invocations | `total_calls_end - total_calls_start` from logs/metrics |
+| `webhook_events_total` | Total events received | `total_events_end - total_events_start` from logs/metrics |
+| `webhook_events_per_consumer` | Events total / n_consumers | Calculated |
+| `webhook_cpu_percent_avg` | Average CPU utilization | Avg of samples from Docker stats or Prometheus |
+| `webhook_mem_bytes_avg` | Average memory usage | Avg of samples from Docker stats |
+| `webhook_net_io_bytes_total` | Total network I/O bytes | `total_io_end - total_io_start` from Docker stats |
+| `webhook_cpu_per_consumer` | Avg CPU / n_consumers | Calculated |
+| `webhook_mem_per_consumer` | Avg Mem / n_consumers | Calculated |
+| `webhook_net_io_per_consumer` | Net I/O total / n_consumers | Calculated |
 
-**Prometheus:**
-- URL: http://localhost:9090
-- NATS metrics available
+### 7. Derived Metrics
 
-**NATS Monitoring:**
-- URL: http://localhost:8222
-- Endpoints:
-  - `/varz` - Server stats
-  - `/jsz` - JetStream stats
-  - `/connz` - Connection stats
-
-### Metrics Collection
-
-```bash
-# Periodic snapshot script
-while true; do
-  echo "=== $(date) ==="
-  echo "Shuffler: $(curl -s http://localhost:8080/metrics) events"
-  echo "Consumers: $(curl -s http://localhost:8082/metrics) events"
-  echo "JetStream: $(curl -s http://localhost:8222/jsz | jq '{messages: .messages, bytes: .bytes, consumers: .consumers}')"
-  echo ""
-  sleep 30
-done
-```
+| Metric | Description | Formula |
+|--------|-------------|---------|
+| `system_efficiency_percent` | Ratio of output to input | `(consumer_messages_total / shuffler_messages_read_total) * 100` |
 
 ## Benchmark Scenarios
 
-### Scenario 1: Baseline (Current)
-- **Consumers:** 100
-- **Poll Interval:** 60s
-- **Batch Size:** 100
-- **Goal:** Validate basic functionality
+### Phase 1: No Webhooks (Maximum Throughput)
 
-### Scenario 2: High Frequency Polling
-- **Consumers:** 100
-- **Poll Interval:** 10s
-- **Batch Size:** 50
-- **Goal:** Test rapid polling impact on NATS
+Test consumer scaling without webhook overhead to establish baseline performance.
 
-### Scenario 3: Scale Test
-- **Consumers:** 1000
-- **Poll Interval:** 60s
-- **Batch Size:** 100
-- **Goal:** Maximum consumer count test
+| Scenario | n_consumers | use_webhook | batch_size | poll_interval | Duration |
+|----------|-------------|-------------|------------|---------------|----------|
+| 1.1 | 100 | false | 10000 | 60s | 5 min |
+| 1.2 | 500 | false | 10000 | 60s | 5 min |
+| 1.3 | 1000 | false | 10000 | 60s | 5 min |
+| 1.4 | 2500 | false | 10000 | 60s | 5 min |
+| 1.5 | 5000 | false | 10000 | 60s | 5 min |
 
-### Scenario 4: Large Batches
-- **Consumers:** 50
-- **Poll Interval:** 120s
-- **Batch Size:** 500
-- **Goal:** Test batch processing efficiency
+**Success Criteria**:
+- JetStream pending messages remains stable (< 100k)
+- No consumer errors or NAKs
+- CPU utilization < 80% on all services
+- Memory usage stable (no leaks)
 
-### Scenario 5: Real-time Simulation
-- **Consumers:** 200
-- **Poll Interval:** 5s
-- **Batch Size:** 20
-- **Goal:** Near real-time processing
+### Phase 2: With Webhooks (Real-World Performance)
 
-## Key Metrics to Track
+Test with webhook delivery enabled to measure overhead.
 
-1. **Throughput**
-   - Shuffler publish rate (msgs/sec)
-   - Consumer process rate (msgs/sec)
-   - Per-consumer throughput
+| Scenario | n_consumers | use_webhook | batch_size | poll_interval | Duration |
+|----------|-------------|-------------|------------|---------------|----------|
+| 2.1 | 100 | true | 10000 | 60s | 5 min |
+| 2.2 | 500 | true | 10000 | 60s | 5 min |
+| 2.3 | 1000 | true | 10000 | 60s | 5 min |
+| 2.4 | 2500 | true | 10000 | 60s | 5 min |
 
-2. **Latency**
-   - Time from publish to first consumer fetch
-   - End-to-end message latency
+**Success Criteria**:
+- All Phase 1 criteria
+- Webhook delivery success rate > 99%
+- Webhook latency < 100ms
 
-3. **Resource Usage**
-   - NATS CPU/Memory
-   - Shuffler CPU/Memory
-   - Consumer CPU/Memory (aggregate)
+### Phase 3: Batch Size Optimization
 
-4. **JetStream Health**
-   - Stream messages count
-   - Stream bytes used
-   - Consumer lag
-   - Slow consumers count
+Find optimal batch size for maximum throughput.
 
-5. **Reliability**
-   - Message loss (published vs consumed)
-   - Failed fetches
-   - Connection errors
-   - Duplicate messages (dedup working?)
+| Scenario | n_consumers | batch_size | use_webhook |
+|----------|-------------|------------|-------------|
+| 3.1 | 1000 | 1000 | false |
+| 3.2 | 1000 | 5000 | false |
+| 3.3 | 1000 | 10000 | false |
+| 3.4 | 1000 | 25000 | false |
 
-## Expected Results (Initial PoC)
+## Orchestration Process
 
-Based on previous testing:
-- **Firehose rate:** ~400-500 msgs/sec
-- **100 consumers:** Each receives ~4-5 msgs/sec
-- **Memory usage:** ~140-200 MB for 100 consumers
-- **CPU usage:** Sub-linear scaling
-- **No slow consumers:** With 60s poll interval
+### Startup Sequence
 
-## Cleanup
+1. **Start NATS** (wait for healthy)
+   ```bash
+   docker-compose up -d nats
+   # Wait for healthcheck to pass
+   ```
 
-```bash
-# Stop and remove all containers
-docker compose down
+2. **Start Webhook Receiver** (if webhooks enabled)
+   ```bash
+   docker-compose up -d webhook-receiver
+   # Wait 2s for startup
+   ```
 
-# Remove volumes (reset state)
-docker compose down -v
+3. **Start Consumers** (configured for scenario)
+   ```bash
+   CONSUMER_COUNT=100 USE_WEBHOOK=false docker-compose up -d consumer
+   # Wait 5s for all consumers to initialize
+   ```
 
-# View logs before cleanup
-docker compose logs > poc-logs.txt
+4. **Start Metrics Collection**
+   ```bash
+   ./scripts/collect-metrics.sh > results/scenario-1.1.csv &
+   ```
+
+5. **Start Shuffler** (begins firehose ingestion)
+   ```bash
+   docker-compose up -d shuffler
+   ```
+
+6. **Run for Duration** (5 minutes)
+   - Collect metrics every 5 seconds
+   - Monitor for errors
+
+### Shutdown Sequence
+
+1. **Stop Shuffler** (stop ingestion)
+   ```bash
+   docker-compose stop shuffler
+   ```
+
+2. **Cooldown Period** (30 seconds)
+   - Allow consumers to drain remaining messages
+   - Continue metrics collection
+
+3. **Stop Consumers**
+   ```bash
+   docker-compose stop consumer
+   ```
+
+4. **Stop Webhook Receiver**
+   ```bash
+   docker-compose stop webhook-receiver
+   ```
+
+5. **Stop Metrics Collection**
+   ```bash
+   kill $METRICS_PID
+   ```
+
+6. **Stop NATS**
+   ```bash
+   docker-compose stop nats
+   ```
+
+7. **Archive Results**
+   ```bash
+   mv results/scenario-*.csv results/archive/$(date +%Y%m%d-%H%M%S)/
+   ```
+
+## Metrics Collection Implementation
+
+### Data Sources
+
+1. **NATS Monitoring API**
+   - URL: `http://localhost:8222/varz`
+   - Provides: CPU, memory, network, message counts
+   - Polling: Every 5 seconds
+
+2. **NATS JetStream API**
+   - URL: `http://localhost:8222/jsz`
+   - Provides: Stream info, consumer info, pending messages
+   - Polling: Every 5 seconds
+
+3. **Application Metrics Endpoints**
+   - Shuffler: `http://localhost:8080/metrics`
+   - Consumer: `http://localhost:8082/metrics`
+   - Webhook Receiver: Logs or metrics endpoint
+
+4. **Docker Stats API**
+   - Command: `docker stats --no-stream --format json`
+   - Provides: CPU%, memory, network I/O per container
+   - Polling: Every 5 seconds
+
+### Output Format
+
+CSV file with **one row per scenario** containing aggregated metrics:
+
+```csv
+scenario,n_consumers,use_webhook,test_duration_sec,nats_cpu_percent_avg,nats_mem_bytes_avg,nats_msgs_in_total,consumer_messages_total,...
+1.1,100,false,300,45.2,524288000,3703500,3450000,...
+1.2,500,false,300,78.5,1048576000,17670000,17100000,...
+1.3,1000,false,300,92.1,2097152000,31500000,30600000,...
 ```
 
-## Next Steps
+Each scenario produces one aggregated row summarizing the entire test period.
 
-After validating PoC:
-1. Test different consumer counts (10, 50, 100, 500, 1000)
-2. Test different poll intervals (5s, 30s, 60s, 120s)
-3. Measure actual message sizes for storage calculations
-4. Test failure scenarios (NATS restart, consumer crashes)
-5. Implement proper cursor persistence
-6. Add backpressure handling to shuffler
+## Analysis
+
+### Key Questions to Answer
+
+1. **Scaling Efficiency**
+   - How does throughput scale with consumer count?
+   - What's the optimal consumer count?
+   - Where are the bottlenecks?
+
+2. **Resource Utilization**
+   - CPU per consumer vs. consumer count
+   - Memory per consumer vs. consumer count
+   - Network bandwidth per consumer
+
+3. **Webhook Overhead**
+   - Throughput degradation with webhooks
+   - Additional CPU/memory cost
+   - Optimal batch size for webhook delivery
+
+4. **System Limits**
+   - Maximum sustainable consumer count
+   - Maximum throughput (events/sec)
+   - Resource constraints (CPU, memory, network)
+
+### Visualization
+
+Generate charts from collected data:
+
+1. **Throughput vs. Consumer Count** (line chart)
+2. **CPU Usage by Service** (stacked area chart)
+3. **Memory Usage by Service** (stacked area chart)
+4. **JetStream Pending Messages** (line chart)
+5. **Per-Consumer Resource Usage** (line charts)
+
+## Automation Script
+
+The benchmark orchestration script (`scripts/run-benchmark.sh`) will:
+
+1. Parse scenario configuration
+2. Execute startup sequence
+3. Collect metrics
+4. Execute shutdown sequence
+5. Generate summary report
+
+Usage:
+```bash
+./scripts/run-benchmark.sh --scenario 1.1
+./scripts/run-benchmark.sh --all  # Run all scenarios
+```
+
+## Expected Results
+
+Based on initial testing:
+
+- **100 consumers**: ~11,500 events/sec
+- **500 consumers**: ~50,000 events/sec (estimated)
+- **1000 consumers**: ~100,000 events/sec (estimated)
+
+Actual results will determine:
+- Optimal consumer count for cost/performance
+- Whether horizontal scaling is needed
+- Infrastructure requirements for production

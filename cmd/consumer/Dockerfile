@@ -1,8 +1,6 @@
 # Multi-stage build for aggressive caching
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
-# Install ca-certificates for SSL
-RUN apk --no-cache add ca-certificates
 WORKDIR /app
 
 # Copy go mod files first for better caching

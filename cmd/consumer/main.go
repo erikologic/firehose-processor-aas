@@ -50,6 +50,18 @@ func main() {
 				EnvVars: []string{"BATCH_SIZE"},
 			},
 			&cli.StringFlag{
+				Name:    "webhook-url",
+				Usage:   "webhook URL to send events to",
+				Value:   "",
+				EnvVars: []string{"WEBHOOK_URL"},
+			},
+			&cli.BoolFlag{
+				Name:    "use-webhook",
+				Usage:   "enable webhook delivery",
+				Value:   false,
+				EnvVars: []string{"USE_WEBHOOK"},
+			},
+			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "log verbosity level (error, warn, info, debug)",
 				Value:   "info",
@@ -70,11 +82,15 @@ func run(cctx *cli.Context) error {
 	numConsumers := cctx.Int("count")
 	pollInterval := time.Duration(cctx.Int("poll-interval")) * time.Second
 	batchSize := cctx.Int("batch-size")
+	webhookURL := cctx.String("webhook-url")
+	useWebhook := cctx.Bool("use-webhook")
 
 	logger.Info("starting pull consumers",
 		"count", numConsumers,
 		"poll_interval", pollInterval,
 		"batch_size", batchSize,
+		"webhook_url", webhookURL,
+		"use_webhook", useWebhook,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -110,7 +126,7 @@ func run(cctx *cli.Context) error {
 			consumerName := fmt.Sprintf("consumer-%d", idx)
 			l := logger.With("consumer", consumerName)
 
-			c, err := consumer.NewPullConsumer(natsURL, consumerName, pollInterval, batchSize, l)
+			c, err := consumer.NewPullConsumer(natsURL, consumerName, pollInterval, batchSize, webhookURL, useWebhook, l)
 			if err != nil {
 				errs <- fmt.Errorf("consumer %d failed to start: %w", idx, err)
 				return
