@@ -276,3 +276,48 @@ def test_run_command_collects_docker_stats_and_includes_in_csv(cli_runner):
         assert any('mem_usage_bytes_avg' in col for col in columns), "Missing mem_usage_bytes_avg column"
         assert any('net_in_bytes_total' in col for col in columns), "Missing net_in_bytes_total column"
         assert any('net_out_bytes_total' in col for col in columns), "Missing net_out_bytes_total column"
+
+
+def test_run_command_includes_configuration_columns_in_csv(cli_runner):
+    """Test that CSV includes test configuration metadata columns.
+
+    Validates that:
+    - CSV includes 'scenario' column with the scenario ID
+    - CSV includes 'n_consumers' column with consumer count
+    - CSV includes 'test_duration_sec' column with actual test duration
+    - Configuration columns have correct values
+
+    This enables reproducibility and comparison of benchmark results across
+    different test configurations.
+
+    Note: This is an integration test requiring NATS/JetStream/Docker running
+    """
+    # Act - use isolated_filesystem for clean test environment
+    with cli_runner.isolated_filesystem():
+        result = cli_runner.invoke(cli, ['run', '--scenario', '2.5', '--output-dir', 'test_results'])
+
+        # Assert
+        assert result.exit_code == 0
+
+        # CSV file should exist
+        csv_path = 'test_results/scenario-2.5.csv'
+        assert os.path.exists(csv_path), f"CSV file not created at {csv_path}"
+
+        # CSV should be readable by pandas
+        df = pd.read_csv(csv_path)
+
+        # Should have exactly 1 row
+        assert len(df) == 1, f"Expected 1 row, got {len(df)}"
+
+        # Should have configuration columns
+        assert 'scenario' in df.columns, "Missing 'scenario' column"
+        assert 'n_consumers' in df.columns, "Missing 'n_consumers' column"
+        assert 'test_duration_sec' in df.columns, "Missing 'test_duration_sec' column"
+
+        # Configuration values should be correct
+        assert df['scenario'].iloc[0] == '2.5', f"Expected scenario '2.5', got {df['scenario'].iloc[0]}"
+        assert df['n_consumers'].iloc[0] == 100, f"Expected n_consumers 100, got {df['n_consumers'].iloc[0]}"
+
+        # Test duration should be reasonable (3 samples × 0.5s interval × 3 sources ≈ 4-5 seconds)
+        duration = df['test_duration_sec'].iloc[0]
+        assert 3.0 <= duration <= 10.0, f"Expected test_duration_sec between 3-10s, got {duration}"
