@@ -121,7 +121,7 @@ def write_results_to_csv(aggregated: dict, scenario: str, output_dir: str) -> st
         Path to the created CSV file
     """
     os.makedirs(output_dir, exist_ok=True)
-    csv_path = f"{output_dir}/scenario-{scenario}.csv"
+    csv_path = os.path.join(output_dir, f"scenario-{scenario}.csv")
     result_df = pd.DataFrame([aggregated])
     result_df.to_csv(csv_path, index=False)
     return csv_path
