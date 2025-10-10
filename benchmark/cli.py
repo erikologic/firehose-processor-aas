@@ -17,7 +17,8 @@ def cli():
 @click.option('--output-dir', default='results', help='Output directory for CSV')
 def run(scenario, output_dir):
     """Run a single benchmark scenario"""
-    pass
+    click.echo(f"Running scenario {scenario}...")
+    click.echo(f"Output directory: {output_dir}")
 
 
 if __name__ == '__main__':
