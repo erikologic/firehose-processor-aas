@@ -1,5 +1,9 @@
 import pandas as pd
 
+# Metric type constants - defines aggregation strategy
+GAUGE_METRICS = ['cpu', 'mem']  # Gauges: use average across samples
+COUNTER_METRICS = ['in_msgs', 'out_msgs', 'in_bytes', 'out_bytes']  # Counters: use delta
+
 
 def aggregate_nats_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
     """
@@ -14,28 +18,26 @@ def aggregate_nats_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
         - Gauges (cpu, mem): averages
         - Counters (msgs, bytes): totals (delta between last and first)
         - Per-consumer: divided by n_consumers
+
+    Raises:
+        ValueError: If DataFrame is empty or n_consumers <= 0
     """
+    # Input validation
+    if df.empty:
+        raise ValueError("DataFrame cannot be empty")
+    if n_consumers <= 0:
+        raise ValueError("n_consumers must be greater than 0")
+
     # Calculate averages for gauge metrics
-    cpu_avg = df['cpu'].mean()
-    mem_avg = df['mem'].mean()
+    result = {}
+    for metric in GAUGE_METRICS:
+        avg_value = df[metric].mean()
+        result[f'{metric}_avg'] = avg_value
+        result[f'{metric}_per_consumer'] = avg_value / n_consumers
 
     # Calculate totals for counter metrics (delta: last - first)
-    in_msgs_total = df['in_msgs'].iloc[-1] - df['in_msgs'].iloc[0]
-    out_msgs_total = df['out_msgs'].iloc[-1] - df['out_msgs'].iloc[0]
-    in_bytes_total = df['in_bytes'].iloc[-1] - df['in_bytes'].iloc[0]
-    out_bytes_total = df['out_bytes'].iloc[-1] - df['out_bytes'].iloc[0]
+    for metric in COUNTER_METRICS:
+        total_value = df[metric].iloc[-1] - df[metric].iloc[0]
+        result[f'{metric}_total'] = total_value
 
-    # Calculate per-consumer metrics
-    cpu_per_consumer = cpu_avg / n_consumers
-    mem_per_consumer = mem_avg / n_consumers
-
-    return {
-        'cpu_avg': cpu_avg,
-        'mem_avg': mem_avg,
-        'in_msgs_total': in_msgs_total,
-        'out_msgs_total': out_msgs_total,
-        'in_bytes_total': in_bytes_total,
-        'out_bytes_total': out_bytes_total,
-        'cpu_per_consumer': cpu_per_consumer,
-        'mem_per_consumer': mem_per_consumer,
-    }
+    return result
