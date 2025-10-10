@@ -92,3 +92,26 @@ def test_run_command_accepts_output_dir_option():
 
     # Assert
     assert result.exit_code == 0  # Success, option recognized and accepted
+
+
+def test_run_command_outputs_scenario_being_executed():
+    """Test that run command acknowledges which scenario is being executed.
+
+    Validates that:
+    - Command executes and produces output
+    - Output confirms the scenario ID that was provided
+    - Output indicates execution is beginning
+
+    This establishes the foundation for command execution visibility,
+    ensuring users know what the tool is doing when they invoke it.
+    """
+    # Arrange
+    runner = CliRunner()
+
+    # Act
+    result = runner.invoke(cli, ['run', '--scenario', '1.1'])
+
+    # Assert
+    assert result.exit_code == 0
+    assert '1.1' in result.output
+    assert 'Running' in result.output or 'Executing' in result.output
