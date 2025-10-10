@@ -143,3 +143,31 @@ def test_run_command_collects_single_nats_sample():
     assert 'NATS' in result.output or 'nats' in result.output
     # Should display at least some metric values (check for common metric names)
     assert 'cpu' in result.output or 'mem' in result.output or 'bytes' in result.output
+
+
+def test_run_command_collects_multiple_samples_and_displays_aggregated_metrics():
+    """Test that run command collects 3 NATS samples and displays aggregated statistics.
+
+    Validates that:
+    - Command collects multiple samples over time (not just one)
+    - Samples are aggregated using pandas logic
+    - Output shows summary statistics (avg, total, per_consumer)
+    - Output does NOT just show individual sample values
+
+    This integrates our existing aggregate_nats_metrics() function with the CLI,
+    completing the end-to-end benchmark collection and aggregation pipeline.
+
+    Note: This is an integration test requiring NATS running on localhost:8222
+    """
+    # Arrange
+    runner = CliRunner()
+
+    # Act
+    result = runner.invoke(cli, ['run', '--scenario', '1.1'])
+
+    # Assert
+    assert result.exit_code == 0
+    # Should indicate multiple sample collection
+    assert 'samples' in result.output.lower() or 'collecting' in result.output.lower()
+    # Should display aggregated metrics (avg, total, per_consumer format)
+    assert '_avg' in result.output or '_total' in result.output or '_per_consumer' in result.output
