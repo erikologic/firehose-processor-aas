@@ -8,8 +8,8 @@ import os
 import time
 import pandas as pd
 import click
-from benchmark.fetchers import fetch_nats_varz
-from benchmark.aggregators import aggregate_nats_metrics
+from benchmark.fetchers import fetch_nats_varz, fetch_jetstream_jsz
+from benchmark.aggregators import aggregate_nats_metrics, aggregate_jetstream_metrics
 
 
 # Configuration constants
@@ -42,6 +42,36 @@ def collect_nats_samples(base_url: str, count: int, interval: float) -> pd.DataF
             'out_msgs': metrics.out_msgs,
             'in_bytes': metrics.in_bytes,
             'out_bytes': metrics.out_bytes,
+        })
+        if i < count - 1:  # Don't sleep after last sample
+            time.sleep(interval)
+
+    return pd.DataFrame(samples)
+
+
+def collect_jetstream_samples(base_url: str, count: int, interval: float) -> pd.DataFrame:
+    """Collect multiple JetStream metric samples over time.
+
+    Args:
+        base_url: NATS monitoring endpoint URL
+        count: Number of samples to collect
+        interval: Seconds to wait between samples
+
+    Returns:
+        DataFrame with columns: streams, consumers, messages, bytes, memory, storage
+    """
+    click.echo(f"Collecting {count} JetStream samples...")
+    samples = []
+    for i in range(count):
+        click.echo(f"  Sample {i+1}/{count}...")
+        metrics = asyncio.run(fetch_jetstream_jsz(base_url))
+        samples.append({
+            'streams': metrics.streams,
+            'consumers': metrics.consumers,
+            'messages': metrics.messages,
+            'bytes': metrics.bytes,
+            'memory': metrics.memory,
+            'storage': metrics.storage,
         })
         if i < count - 1:  # Don't sleep after last sample
             time.sleep(interval)
@@ -96,8 +126,15 @@ def run(scenario, output_dir):
     click.echo(f"Output directory: {output_dir}")
 
     # Collect and aggregate NATS metrics
-    df = collect_nats_samples(DEFAULT_NATS_URL, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
-    aggregated = aggregate_nats_metrics(df, DEFAULT_N_CONSUMERS)
+    nats_df = collect_nats_samples(DEFAULT_NATS_URL, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
+    nats_aggregated = aggregate_nats_metrics(nats_df, DEFAULT_N_CONSUMERS)
+
+    # Collect and aggregate JetStream metrics
+    jetstream_df = collect_jetstream_samples(DEFAULT_NATS_URL, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
+    jetstream_aggregated = aggregate_jetstream_metrics(jetstream_df, DEFAULT_N_CONSUMERS)
+
+    # Merge all metrics
+    aggregated = {**nats_aggregated, **jetstream_aggregated}
 
     # Display and save results
     display_aggregated_metrics(aggregated)
