@@ -90,23 +90,9 @@ def collect_docker_samples(container_name: str, count: int, interval: float) -> 
         interval: Seconds to wait between samples
 
     Returns:
-        DataFrame with columns: cpu_percent, mem_usage_bytes, net_in_bytes, net_out_bytes
+        DataFrame with columns: container_name, cpu_percent, mem_usage_bytes, net_in_bytes, net_out_bytes
     """
-    click.echo(f"Collecting {count} Docker stats samples...")
-    samples = []
-    for i in range(count):
-        click.echo(f"  Sample {i+1}/{count}...")
-        stats = asyncio.run(fetch_docker_stats(container_name))
-        samples.append({
-            'cpu_percent': stats.cpu_percent,
-            'mem_usage_bytes': stats.mem_usage_bytes,
-            'net_in_bytes': stats.net_in_bytes,
-            'net_out_bytes': stats.net_out_bytes,
-        })
-        if i < count - 1:  # Don't sleep after last sample
-            time.sleep(interval)
-
-    return pd.DataFrame(samples)
+    return collect_samples(fetch_docker_stats, container_name, count, interval, "Docker stats")
 
 
 def display_aggregated_metrics(aggregated: dict) -> None:
