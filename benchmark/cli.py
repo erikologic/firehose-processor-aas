@@ -4,6 +4,7 @@ Firehose Processor Benchmark CLI
 Command-line interface for running benchmark scenarios and analyzing results.
 """
 import asyncio
+import os
 import time
 import pandas as pd
 import click
@@ -54,6 +55,13 @@ def run(scenario, output_dir):
             click.echo(f"  {key}: {value:.2f}")
         else:
             click.echo(f"  {key}: {value}")
+
+    # Write results to CSV
+    os.makedirs(output_dir, exist_ok=True)
+    csv_path = f"{output_dir}/scenario-{scenario}.csv"
+    result_df = pd.DataFrame([aggregated])
+    result_df.to_csv(csv_path, index=False)
+    click.echo(f"\nResults written to {csv_path}")
 
 
 if __name__ == '__main__':
