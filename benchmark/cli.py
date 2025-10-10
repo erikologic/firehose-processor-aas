@@ -12,5 +12,11 @@ def cli():
     pass
 
 
+@cli.command()
+def run():
+    """Run a single benchmark scenario"""
+    pass
+
+
 if __name__ == '__main__':
     cli()
