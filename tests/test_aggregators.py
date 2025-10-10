@@ -128,13 +128,12 @@ async def test_aggregate_jetstream_metrics_should_calculate_averages_and_totals(
     Collect real JetStream samples and aggregate them using pandas.
 
     Aggregation logic:
-    - Gauges (streams, consumers, memory, storage): Calculate average across samples
-    - Counters (messages, bytes): Calculate delta (last - first)
+    - All metrics are gauges (snapshot values): Calculate average across samples
     - Per-consumer metrics: Divide gauge averages by n_consumers
 
     Metric classification:
-    - Gauges: streams, consumers, memory, storage (snapshot values)
-    - Counters: messages, bytes (cumulative values)
+    - All 6 metrics are gauges (snapshot values): streams, consumers, messages, bytes, memory, storage
+    - Note: messages and bytes represent "current stored", not cumulative totals
     """
     # Arrange - collect 3 real samples from JetStream
     samples = []
@@ -158,28 +157,30 @@ async def test_aggregate_jetstream_metrics_should_calculate_averages_and_totals(
     # Assert - result should be a dictionary with aggregated metrics
     assert isinstance(result, dict)
 
-    # Assert - Gauge metrics: averages
+    # Assert - All metrics are gauges: check averages
     assert 'streams_avg' in result
     assert 'consumers_avg' in result
+    assert 'messages_avg' in result
+    assert 'bytes_avg' in result
     assert 'memory_avg' in result
     assert 'storage_avg' in result
     assert result['streams_avg'] >= 0
     assert result['consumers_avg'] >= 0
+    assert result['messages_avg'] >= 0
+    assert result['bytes_avg'] >= 0
     assert result['memory_avg'] >= 0
     assert result['storage_avg'] >= 0
 
-    # Assert - Counter metrics: totals (delta)
-    assert 'messages_total' in result
-    assert 'bytes_total' in result
-    assert result['messages_total'] >= 0
-    assert result['bytes_total'] >= 0
-
-    # Assert - Per-consumer metrics (gauges divided by n_consumers)
+    # Assert - Per-consumer metrics (all gauges divided by n_consumers)
     assert 'streams_per_consumer' in result
     assert 'consumers_per_consumer' in result
+    assert 'messages_per_consumer' in result
+    assert 'bytes_per_consumer' in result
     assert 'memory_per_consumer' in result
     assert 'storage_per_consumer' in result
     assert result['streams_per_consumer'] == result['streams_avg'] / N_CONSUMERS
     assert result['consumers_per_consumer'] == result['consumers_avg'] / N_CONSUMERS
+    assert result['messages_per_consumer'] == result['messages_avg'] / N_CONSUMERS
+    assert result['bytes_per_consumer'] == result['bytes_avg'] / N_CONSUMERS
     assert result['memory_per_consumer'] == result['memory_avg'] / N_CONSUMERS
     assert result['storage_per_consumer'] == result['storage_avg'] / N_CONSUMERS
