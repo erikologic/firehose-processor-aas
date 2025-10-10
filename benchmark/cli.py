@@ -22,6 +22,37 @@ DEFAULT_NATS_URL = "http://localhost:8222"
 DEFAULT_DOCKER_CONTAINER = "fpaas-nats"
 
 
+def collect_samples(
+    fetcher: Callable[[str], Awaitable[BaseModel]],
+    source: str,
+    count: int,
+    interval: float,
+    metric_name: str
+) -> pd.DataFrame:
+    """Collect multiple metric samples over time using a generic fetcher.
+
+    Args:
+        fetcher: Async function that fetches metrics given a source identifier
+        source: Source identifier (URL, container name, etc.)
+        count: Number of samples to collect
+        interval: Seconds to wait between samples
+        metric_name: Display name for the metrics being collected
+
+    Returns:
+        DataFrame with columns from the Pydantic model returned by fetcher
+    """
+    click.echo(f"\nCollecting {count} {metric_name} samples...")
+    samples = []
+    for i in range(count):
+        click.echo(f"  Sample {i+1}/{count}...")
+        metrics = asyncio.run(fetcher(source))
+        samples.append(metrics.model_dump())
+        if i < count - 1:  # Don't sleep after last sample
+            time.sleep(interval)
+
+    return pd.DataFrame(samples)
+
+
 def collect_nats_samples(base_url: str, count: int, interval: float) -> pd.DataFrame:
     """Collect multiple NATS metric samples over time.
 
@@ -33,23 +64,7 @@ def collect_nats_samples(base_url: str, count: int, interval: float) -> pd.DataF
     Returns:
         DataFrame with columns: cpu, mem, in_msgs, out_msgs, in_bytes, out_bytes
     """
-    click.echo(f"\nCollecting {count} NATS samples...")
-    samples = []
-    for i in range(count):
-        click.echo(f"  Sample {i+1}/{count}...")
-        metrics = asyncio.run(fetch_nats_varz(base_url))
-        samples.append({
-            'cpu': metrics.cpu,
-            'mem': metrics.mem,
-            'in_msgs': metrics.in_msgs,
-            'out_msgs': metrics.out_msgs,
-            'in_bytes': metrics.in_bytes,
-            'out_bytes': metrics.out_bytes,
-        })
-        if i < count - 1:  # Don't sleep after last sample
-            time.sleep(interval)
-
-    return pd.DataFrame(samples)
+    return collect_samples(fetch_nats_varz, base_url, count, interval, "NATS")
 
 
 def collect_jetstream_samples(base_url: str, count: int, interval: float) -> pd.DataFrame:
