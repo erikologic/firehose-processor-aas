@@ -1,8 +1,8 @@
 import pytest
 import pandas as pd
 import asyncio
-from benchmark.fetchers import fetch_nats_varz, fetch_jetstream_jsz
-from benchmark.aggregators import aggregate_nats_metrics, aggregate_jetstream_metrics
+from benchmark.fetchers import fetch_nats_varz, fetch_jetstream_jsz, fetch_docker_stats
+from benchmark.aggregators import aggregate_nats_metrics, aggregate_jetstream_metrics, aggregate_docker_stats
 
 
 # Test configuration
@@ -184,3 +184,58 @@ async def test_aggregate_jetstream_metrics_should_calculate_averages_and_totals(
     assert result['bytes_per_consumer'] == result['bytes_avg'] / N_CONSUMERS
     assert result['memory_per_consumer'] == result['memory_avg'] / N_CONSUMERS
     assert result['storage_per_consumer'] == result['storage_avg'] / N_CONSUMERS
+
+
+@pytest.mark.asyncio
+async def test_aggregate_docker_stats_should_calculate_averages_and_deltas():
+    """
+    Collect real Docker stats samples and aggregate them using pandas.
+
+    Aggregation logic:
+    - Gauges (cpu_percent, mem_usage_bytes): Calculate average across samples
+      Gauges represent snapshot values at a point in time
+    - Counters (net_in_bytes, net_out_bytes): Calculate delta (last - first)
+      Counters are cumulative values that always increase
+    - Per-consumer metrics: Divide aggregates by n_consumers
+
+    Metric classification:
+    - Gauges: cpu_percent, mem_usage_bytes (snapshot values)
+    - Counters: net_in_bytes, net_out_bytes (cumulative totals)
+    """
+    # Arrange - collect 3 real samples from Docker stats
+    samples = []
+    for _ in range(3):
+        stats = await fetch_docker_stats("fpaas-nats")
+        samples.append({
+            'cpu_percent': stats.cpu_percent,
+            'mem_usage_bytes': stats.mem_usage_bytes,
+            'net_in_bytes': stats.net_in_bytes,
+            'net_out_bytes': stats.net_out_bytes,
+        })
+        await asyncio.sleep(SAMPLE_INTERVAL_SECONDS)  # Wait between samples
+
+    df = pd.DataFrame(samples)
+
+    # Act - aggregate the samples
+    result = aggregate_docker_stats(df, N_CONSUMERS)
+
+    # Assert - result should be a dictionary with aggregated metrics
+    assert isinstance(result, dict)
+
+    # Assert - Gauge metrics: averages
+    assert 'cpu_percent_avg' in result
+    assert 'mem_usage_bytes_avg' in result
+    assert result['cpu_percent_avg'] >= 0
+    assert result['mem_usage_bytes_avg'] >= 0
+
+    # Assert - Counter metrics: totals (delta)
+    assert 'net_in_bytes_total' in result
+    assert 'net_out_bytes_total' in result
+    assert result['net_in_bytes_total'] >= 0
+    assert result['net_out_bytes_total'] >= 0
+
+    # Assert - Per-consumer metrics
+    assert 'cpu_percent_per_consumer' in result
+    assert 'mem_usage_bytes_per_consumer' in result
+    assert result['cpu_percent_per_consumer'] == result['cpu_percent_avg'] / N_CONSUMERS
+    assert result['mem_usage_bytes_per_consumer'] == result['mem_usage_bytes_avg'] / N_CONSUMERS
