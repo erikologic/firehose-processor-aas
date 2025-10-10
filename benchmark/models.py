@@ -19,3 +19,12 @@ class JetStreamJszMetrics(BaseModel):
     bytes: int = Field(ge=0, description="Total storage bytes")
     memory: int = Field(ge=0, description="Memory usage in bytes")
     storage: int = Field(ge=0, description="Storage usage in bytes")
+
+
+class DockerStatsMetrics(BaseModel):
+    """Docker container stats metrics"""
+    container_name: str = Field(description="Container name")
+    cpu_percent: float = Field(ge=0, le=100, description="CPU usage percentage")
+    mem_usage_bytes: int = Field(gt=0, description="Memory usage in bytes")
+    net_in_bytes: int = Field(ge=0, description="Network bytes received")
+    net_out_bytes: int = Field(ge=0, description="Network bytes sent")
