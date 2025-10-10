@@ -14,7 +14,8 @@ def cli():
 
 @cli.command()
 @click.option('--scenario', required=True, help='Scenario ID (e.g., 1.1, 2.3)')
-def run(scenario):
+@click.option('--output-dir', default='results', help='Output directory for CSV')
+def run(scenario, output_dir):
     """Run a single benchmark scenario"""
     pass
 
