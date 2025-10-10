@@ -5,7 +5,9 @@ Tests for the command-line interface entry point of the Firehose Processor Bench
 These tests validate that the CLI exists, responds to standard commands, and provides
 appropriate help information.
 """
+import os
 import pytest
+import pandas as pd
 from click.testing import CliRunner
 from benchmark.cli import cli
 
@@ -171,3 +173,40 @@ def test_run_command_collects_multiple_samples_and_displays_aggregated_metrics()
     assert 'samples' in result.output.lower() or 'collecting' in result.output.lower()
     # Should display aggregated metrics (avg, total, per_consumer format)
     assert '_avg' in result.output or '_total' in result.output or '_per_consumer' in result.output
+
+
+def test_run_command_writes_aggregated_results_to_csv_file():
+    """Test that run command creates CSV file with aggregated metrics.
+
+    Validates that:
+    - CSV file is created at {output-dir}/scenario-{id}.csv
+    - File contains aggregated results (one row)
+    - CSV has proper structure with all aggregated columns
+    - File is readable by pandas
+
+    This completes the benchmark workflow: collect → aggregate → persist to CSV.
+
+    Note: This is an integration test requiring NATS running on localhost:8222
+    """
+    # Arrange
+    runner = CliRunner()
+
+    # Act - use isolated_filesystem for clean test environment
+    with runner.isolated_filesystem():
+        result = runner.invoke(cli, ['run', '--scenario', '1.1', '--output-dir', 'test_results'])
+
+        # Assert
+        assert result.exit_code == 0
+        # CSV file should exist
+        csv_path = 'test_results/scenario-1.1.csv'
+        assert os.path.exists(csv_path), f"CSV file not created at {csv_path}"
+
+        # CSV should be readable by pandas
+        df = pd.read_csv(csv_path)
+
+        # Should have exactly 1 row (aggregated results, not raw samples)
+        assert len(df) == 1, f"Expected 1 row, got {len(df)}"
+
+        # Should have aggregated columns
+        columns = df.columns.tolist()
+        assert any('_avg' in col or '_total' in col or '_per_consumer' in col for col in columns),             f"No aggregated columns found in {columns}"
