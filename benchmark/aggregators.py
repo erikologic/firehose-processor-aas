@@ -92,25 +92,7 @@ def aggregate_jetstream_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
     Raises:
         ValueError: If DataFrame is empty or n_consumers <= 0
     """
-    # Input validation
-    if df.empty:
-        raise ValueError("DataFrame cannot be empty")
-    if n_consumers <= 0:
-        raise ValueError("n_consumers must be greater than 0")
-
-    # Calculate averages for gauge metrics
-    result = {}
-    for metric in JETSTREAM_GAUGE_METRICS:
-        avg_value = df[metric].mean()
-        result[f'{metric}_avg'] = avg_value
-        result[f'{metric}_per_consumer'] = avg_value / n_consumers
-
-    # Calculate totals for counter metrics (delta: last - first)
-    for metric in JETSTREAM_COUNTER_METRICS:
-        total_value = df[metric].iloc[-1] - df[metric].iloc[0]
-        result[f'{metric}_total'] = total_value
-
-    return result
+    return aggregate_metrics(df, n_consumers, JETSTREAM_GAUGE_METRICS, JETSTREAM_COUNTER_METRICS)
 
 
 def aggregate_docker_stats(df: pd.DataFrame, n_consumers: int) -> dict:
