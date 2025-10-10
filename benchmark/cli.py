@@ -6,6 +6,7 @@ Command-line interface for running benchmark scenarios and analyzing results.
 import asyncio
 import os
 import time
+from datetime import datetime
 from typing import Callable, Awaitable
 import pandas as pd
 import click
@@ -110,7 +111,7 @@ def display_aggregated_metrics(aggregated: dict) -> None:
 
 
 def write_results_to_csv(aggregated: dict, scenario: str, output_dir: str) -> str:
-    """Write aggregated metrics to CSV file.
+    """Write aggregated metrics to CSV file with ISO datetime timestamp.
 
     Args:
         aggregated: Dictionary of aggregated metric values
@@ -121,7 +122,11 @@ def write_results_to_csv(aggregated: dict, scenario: str, output_dir: str) -> st
         Path to the created CSV file
     """
     os.makedirs(output_dir, exist_ok=True)
-    csv_path = os.path.join(output_dir, f"scenario-{scenario}.csv")
+
+    # Generate ISO datetime timestamp: YYYYMMDD-HHMMSS
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    csv_path = os.path.join(output_dir, f"scenario-{scenario}-{timestamp}.csv")
     result_df = pd.DataFrame([aggregated])
     result_df.to_csv(csv_path, index=False)
     return csv_path

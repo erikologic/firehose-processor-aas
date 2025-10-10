@@ -157,7 +157,7 @@ def test_run_command_writes_aggregated_results_to_csv_file(cli_runner):
     """Test that run command creates CSV file with aggregated metrics.
 
     Validates that:
-    - CSV file is created at {output-dir}/scenario-{id}.csv
+    - CSV file is created with timestamp
     - File contains aggregated results (one row)
     - CSV has proper structure with all aggregated columns
     - File is readable by pandas
@@ -172,9 +172,11 @@ def test_run_command_writes_aggregated_results_to_csv_file(cli_runner):
 
         # Assert
         assert result.exit_code == 0
-        # CSV file should exist
-        csv_path = 'test_results/scenario-1.1.csv'
-        assert os.path.exists(csv_path), f"CSV file not created at {csv_path}"
+        # CSV file should exist with timestamp
+        import glob
+        csv_files = glob.glob('test_results/scenario-1.1-*.csv')
+        assert len(csv_files) == 1, f"Expected 1 CSV file, found {len(csv_files)}"
+        csv_path = csv_files[0]
 
         # CSV should be readable by pandas
         df = pd.read_csv(csv_path)
@@ -208,9 +210,11 @@ def test_run_command_collects_jetstream_metrics_and_includes_in_csv(cli_runner):
         # Assert
         assert result.exit_code == 0
 
-        # CSV file should exist
-        csv_path = 'test_results/scenario-1.1.csv'
-        assert os.path.exists(csv_path), f"CSV file not created at {csv_path}"
+        # CSV file should exist with timestamp
+        import glob
+        csv_files = glob.glob('test_results/scenario-1.1-*.csv')
+        assert len(csv_files) == 1, f"Expected 1 CSV file, found {len(csv_files)}"
+        csv_path = csv_files[0]
 
         # CSV should be readable by pandas
         df = pd.read_csv(csv_path)
@@ -253,9 +257,11 @@ def test_run_command_collects_docker_stats_and_includes_in_csv(cli_runner):
         # Assert
         assert result.exit_code == 0
 
-        # CSV file should exist
-        csv_path = 'test_results/scenario-1.1.csv'
-        assert os.path.exists(csv_path), f"CSV file not created at {csv_path}"
+        # CSV file should exist with timestamp
+        import glob
+        csv_files = glob.glob('test_results/scenario-1.1-*.csv')
+        assert len(csv_files) == 1, f"Expected 1 CSV file, found {len(csv_files)}"
+        csv_path = csv_files[0]
 
         # CSV should be readable by pandas
         df = pd.read_csv(csv_path)
@@ -299,9 +305,11 @@ def test_run_command_includes_configuration_columns_in_csv(cli_runner):
         # Assert
         assert result.exit_code == 0
 
-        # CSV file should exist
-        csv_path = 'test_results/scenario-2.5.csv'
-        assert os.path.exists(csv_path), f"CSV file not created at {csv_path}"
+        # CSV file should exist with timestamp
+        import glob
+        csv_files = glob.glob('test_results/scenario-2.5-*.csv')
+        assert len(csv_files) == 1, f"Expected 1 CSV file, found {len(csv_files)}"
+        csv_path = csv_files[0]
 
         # CSV should be readable by pandas
         df = pd.read_csv(csv_path)
