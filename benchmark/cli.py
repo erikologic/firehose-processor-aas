@@ -8,8 +8,8 @@ import os
 import time
 import pandas as pd
 import click
-from benchmark.fetchers import fetch_nats_varz, fetch_jetstream_jsz
-from benchmark.aggregators import aggregate_nats_metrics, aggregate_jetstream_metrics
+from benchmark.fetchers import fetch_nats_varz, fetch_jetstream_jsz, fetch_docker_stats
+from benchmark.aggregators import aggregate_nats_metrics, aggregate_jetstream_metrics, aggregate_docker_stats
 
 
 # Configuration constants
@@ -17,6 +17,7 @@ DEFAULT_N_CONSUMERS = 100
 DEFAULT_SAMPLE_COUNT = 3
 DEFAULT_SAMPLE_INTERVAL_SECONDS = 0.5
 DEFAULT_NATS_URL = "http://localhost:8222"
+DEFAULT_DOCKER_CONTAINER = "fpaas-nats"
 
 
 def collect_nats_samples(base_url: str, count: int, interval: float) -> pd.DataFrame:
@@ -79,6 +80,34 @@ def collect_jetstream_samples(base_url: str, count: int, interval: float) -> pd.
     return pd.DataFrame(samples)
 
 
+def collect_docker_samples(container_name: str, count: int, interval: float) -> pd.DataFrame:
+    """Collect multiple Docker stats samples over time.
+
+    Args:
+        container_name: Docker container name to monitor
+        count: Number of samples to collect
+        interval: Seconds to wait between samples
+
+    Returns:
+        DataFrame with columns: cpu_percent, mem_usage_bytes, net_in_bytes, net_out_bytes
+    """
+    click.echo(f"Collecting {count} Docker stats samples...")
+    samples = []
+    for i in range(count):
+        click.echo(f"  Sample {i+1}/{count}...")
+        stats = asyncio.run(fetch_docker_stats(container_name))
+        samples.append({
+            'cpu_percent': stats.cpu_percent,
+            'mem_usage_bytes': stats.mem_usage_bytes,
+            'net_in_bytes': stats.net_in_bytes,
+            'net_out_bytes': stats.net_out_bytes,
+        })
+        if i < count - 1:  # Don't sleep after last sample
+            time.sleep(interval)
+
+    return pd.DataFrame(samples)
+
+
 def display_aggregated_metrics(aggregated: dict) -> None:
     """Display aggregated metrics to console.
 
@@ -133,8 +162,12 @@ def run(scenario, output_dir):
     jetstream_df = collect_jetstream_samples(DEFAULT_NATS_URL, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
     jetstream_aggregated = aggregate_jetstream_metrics(jetstream_df, DEFAULT_N_CONSUMERS)
 
+    # Collect and aggregate Docker stats
+    docker_df = collect_docker_samples(DEFAULT_DOCKER_CONTAINER, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
+    docker_aggregated = aggregate_docker_stats(docker_df, DEFAULT_N_CONSUMERS)
+
     # Merge all metrics
-    aggregated = {**nats_aggregated, **jetstream_aggregated}
+    aggregated = {**nats_aggregated, **jetstream_aggregated, **docker_aggregated}
 
     # Display and save results
     display_aggregated_metrics(aggregated)
