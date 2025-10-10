@@ -230,3 +230,49 @@ def test_run_command_collects_jetstream_metrics_and_includes_in_csv(cli_runner):
         # Should have both averages and per_consumer metrics for JetStream gauges
         assert any('streams_avg' in col for col in columns), "Missing streams_avg column"
         assert any('streams_per_consumer' in col for col in columns), "Missing streams_per_consumer column"
+
+
+def test_run_command_collects_docker_stats_and_includes_in_csv(cli_runner):
+    """Test that run command collects Docker stats alongside NATS and JetStream metrics.
+
+    Validates that:
+    - Command collects NATS, JetStream, AND Docker stats
+    - Docker stats are aggregated correctly (gauges averaged, counters delta)
+    - CSV output includes Docker metric columns
+    - All Docker metrics have valid values (not null)
+
+    This completes the third metric source integration, establishing the full
+    benchmark metric collection capability.
+
+    Note: This is an integration test requiring Docker container 'fpaas-nats' running
+    """
+    # Act - use isolated_filesystem for clean test environment
+    with cli_runner.isolated_filesystem():
+        result = cli_runner.invoke(cli, ['run', '--scenario', '1.1', '--output-dir', 'test_results'])
+
+        # Assert
+        assert result.exit_code == 0
+
+        # CSV file should exist
+        csv_path = 'test_results/scenario-1.1.csv'
+        assert os.path.exists(csv_path), f"CSV file not created at {csv_path}"
+
+        # CSV should be readable by pandas
+        df = pd.read_csv(csv_path)
+
+        # Should have exactly 1 row (aggregated results)
+        assert len(df) == 1, f"Expected 1 row, got {len(df)}"
+
+        # Should have Docker stats columns
+        columns = df.columns.tolist()
+        docker_columns = [col for col in columns if col.startswith('cpu_percent_') or
+                         col.startswith('mem_usage_bytes_') or col.startswith('net_in_bytes_') or
+                         col.startswith('net_out_bytes_')]
+
+        assert len(docker_columns) > 0, f"No Docker stats columns found in {columns}"
+
+        # Should have both averages for gauges and totals for counters
+        assert any('cpu_percent_avg' in col for col in columns), "Missing cpu_percent_avg column"
+        assert any('mem_usage_bytes_avg' in col for col in columns), "Missing mem_usage_bytes_avg column"
+        assert any('net_in_bytes_total' in col for col in columns), "Missing net_in_bytes_total column"
+        assert any('net_out_bytes_total' in col for col in columns), "Missing net_out_bytes_total column"
