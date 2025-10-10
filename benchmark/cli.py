@@ -141,6 +141,9 @@ def run(scenario, output_dir):
     click.echo(f"Running scenario {scenario}...")
     click.echo(f"Output directory: {output_dir}")
 
+    # Track test start time
+    start_time = time.time()
+
     # Collect and aggregate NATS metrics
     nats_df = collect_nats_samples(DEFAULT_NATS_URL, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
     nats_aggregated = aggregate_nats_metrics(nats_df, DEFAULT_N_CONSUMERS)
@@ -153,8 +156,19 @@ def run(scenario, output_dir):
     docker_df = collect_docker_samples(DEFAULT_DOCKER_CONTAINER, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
     docker_aggregated = aggregate_docker_stats(docker_df, DEFAULT_N_CONSUMERS)
 
-    # Merge all metrics
-    aggregated = {**nats_aggregated, **jetstream_aggregated, **docker_aggregated}
+    # Calculate test duration
+    end_time = time.time()
+    test_duration_sec = end_time - start_time
+
+    # Merge all metrics with configuration metadata
+    aggregated = {
+        'scenario': scenario,
+        'n_consumers': DEFAULT_N_CONSUMERS,
+        'test_duration_sec': test_duration_sec,
+        **nats_aggregated,
+        **jetstream_aggregated,
+        **docker_aggregated
+    }
 
     # Display and save results
     display_aggregated_metrics(aggregated)

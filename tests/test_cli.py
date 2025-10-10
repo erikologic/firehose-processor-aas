@@ -315,7 +315,8 @@ def test_run_command_includes_configuration_columns_in_csv(cli_runner):
         assert 'test_duration_sec' in df.columns, "Missing 'test_duration_sec' column"
 
         # Configuration values should be correct
-        assert df['scenario'].iloc[0] == '2.5', f"Expected scenario '2.5', got {df['scenario'].iloc[0]}"
+        # Note: pandas may read numeric-looking scenario IDs as floats
+        assert str(df['scenario'].iloc[0]) == '2.5', f"Expected scenario '2.5', got {df['scenario'].iloc[0]}"
         assert df['n_consumers'].iloc[0] == 100, f"Expected n_consumers 100, got {df['n_consumers'].iloc[0]}"
 
         # Test duration should be reasonable (3 samples × 0.5s interval × 3 sources ≈ 4-5 seconds)
