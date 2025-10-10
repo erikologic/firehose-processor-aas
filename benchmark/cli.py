@@ -13,7 +13,8 @@ def cli():
 
 
 @cli.command()
-def run():
+@click.option('--scenario', required=True, help='Scenario ID (e.g., 1.1, 2.3)')
+def run(scenario):
     """Run a single benchmark scenario"""
     pass
 
