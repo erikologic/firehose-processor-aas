@@ -17,8 +17,7 @@ from benchmark.aggregators import aggregate_nats_metrics, aggregate_jetstream_me
 
 # Configuration constants
 DEFAULT_N_CONSUMERS = 100
-DEFAULT_SAMPLE_COUNT = 3
-DEFAULT_SAMPLE_INTERVAL_SECONDS = 0.5
+SAMPLE_INTERVAL_SECONDS = 5.0  # Hardcoded based on metric natural resolution
 DEFAULT_NATS_URL = "http://localhost:8222"
 DEFAULT_DOCKER_CONTAINER = "fpaas-nats"
 
@@ -141,24 +140,30 @@ def cli():
 @cli.command()
 @click.option('--scenario', required=True, help='Scenario ID (e.g., 1.1, 2.3)')
 @click.option('--output-dir', default='results', help='Output directory for CSV')
-def run(scenario, output_dir):
+@click.option('--duration', required=True, type=int,
+              help='Test duration in seconds (e.g., 300 for 5 minutes)')
+def run(scenario, output_dir, duration):
     """Run a single benchmark scenario"""
+    # Calculate sample count from duration and interval
+    sample_count = int(duration / SAMPLE_INTERVAL_SECONDS)
+
     click.echo(f"Running scenario {scenario}...")
     click.echo(f"Output directory: {output_dir}")
+    click.echo(f"Test duration: {duration}s ({sample_count} samples @ {SAMPLE_INTERVAL_SECONDS}s interval)")
 
     # Track test start time
     start_time = time.time()
 
     # Collect and aggregate NATS metrics
-    nats_df = collect_nats_samples(DEFAULT_NATS_URL, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
+    nats_df = collect_nats_samples(DEFAULT_NATS_URL, sample_count, SAMPLE_INTERVAL_SECONDS)
     nats_aggregated = aggregate_nats_metrics(nats_df, DEFAULT_N_CONSUMERS)
 
     # Collect and aggregate JetStream metrics
-    jetstream_df = collect_jetstream_samples(DEFAULT_NATS_URL, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
+    jetstream_df = collect_jetstream_samples(DEFAULT_NATS_URL, sample_count, SAMPLE_INTERVAL_SECONDS)
     jetstream_aggregated = aggregate_jetstream_metrics(jetstream_df, DEFAULT_N_CONSUMERS)
 
     # Collect and aggregate Docker stats
-    docker_df = collect_docker_samples(DEFAULT_DOCKER_CONTAINER, DEFAULT_SAMPLE_COUNT, DEFAULT_SAMPLE_INTERVAL_SECONDS)
+    docker_df = collect_docker_samples(DEFAULT_DOCKER_CONTAINER, sample_count, SAMPLE_INTERVAL_SECONDS)
     docker_aggregated = aggregate_docker_stats(docker_df, DEFAULT_N_CONSUMERS)
 
     # Calculate test duration
