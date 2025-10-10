@@ -26,3 +26,25 @@ def test_cli_responds_to_help():
     # Assert
     assert result.exit_code == 0
     assert 'Firehose Processor Benchmark Tool' in result.output
+
+
+def test_run_command_exists_and_responds_to_help():
+    """Test that 'run' command is registered and accessible.
+
+    Validates that:
+    - 'run' command exists in the CLI
+    - 'run' command responds to --help flag successfully
+    - Help output contains the command description for user guidance
+
+    This test establishes that the 'run' command is available for executing
+    single benchmark scenarios, which is the core functionality of the tool.
+    """
+    # Arrange
+    runner = CliRunner()
+
+    # Act
+    result = runner.invoke(cli, ['run', '--help'])
+
+    # Assert
+    assert result.exit_code == 0
+    assert 'Run a single benchmark scenario' in result.output
