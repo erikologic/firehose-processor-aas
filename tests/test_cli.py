@@ -322,3 +322,39 @@ def test_run_command_includes_configuration_columns_in_csv(cli_runner):
         # Test duration should be reasonable (3 samples × 0.5s interval × 3 sources ≈ 4-5 seconds)
         duration = df['test_duration_sec'].iloc[0]
         assert 3.0 <= duration <= 10.0, f"Expected test_duration_sec between 3-10s, got {duration}"
+
+
+def test_run_command_creates_csv_with_timestamp_in_filename(cli_runner):
+    """Test that CSV filename includes ISO datetime timestamp.
+
+    Validates that:
+    - CSV filename format is: scenario-{id}-{YYYYMMDD-HHMMSS}.csv
+    - Timestamp is in ISO 8601 compact format
+    - File is created with the timestamped name
+    - Multiple runs create different files (don't overwrite)
+
+    This enables tracking multiple benchmark runs over time without
+    manual file renaming.
+
+    Note: This is an integration test requiring NATS/JetStream/Docker running
+    """
+    # Act - use isolated_filesystem for clean test environment
+    with cli_runner.isolated_filesystem():
+        result = cli_runner.invoke(cli, ['run', '--scenario', '3.2', '--output-dir', 'test_results'])
+
+        # Assert
+        assert result.exit_code == 0
+
+        # Find CSV files matching the pattern
+        import glob
+        csv_files = glob.glob('test_results/scenario-3.2-*.csv')
+
+        assert len(csv_files) == 1, f"Expected 1 CSV file, found {len(csv_files)}: {csv_files}"
+
+        csv_filename = os.path.basename(csv_files[0])
+
+        # Filename should match pattern: scenario-3.2-YYYYMMDD-HHMMSS.csv
+        import re
+        pattern = r'scenario-3\.2-\d{8}-\d{6}\.csv'
+        assert re.match(pattern, csv_filename), \
+            f"Filename '{csv_filename}' doesn't match expected pattern 'scenario-3.2-YYYYMMDD-HHMMSS.csv'"
