@@ -48,3 +48,26 @@ def test_run_command_exists_and_responds_to_help():
     # Assert
     assert result.exit_code == 0
     assert 'Run a single benchmark scenario' in result.output
+
+
+def test_run_command_requires_scenario_option():
+    """Test that run command fails when --scenario option is not provided.
+
+    Validates that:
+    - Command cannot execute without specifying which scenario to run
+    - Exit code indicates usage error (2)
+    - Error message clearly identifies the missing --scenario option
+
+    This enforces that every benchmark run must explicitly specify which
+    scenario to execute, preventing accidental runs with undefined behavior.
+    """
+    # Arrange
+    runner = CliRunner()
+
+    # Act
+    result = runner.invoke(cli, ['run'])
+
+    # Assert
+    assert result.exit_code == 2  # Click usage error
+    assert 'Missing option' in result.output
+    assert '--scenario' in result.output
