@@ -78,23 +78,7 @@ def collect_jetstream_samples(base_url: str, count: int, interval: float) -> pd.
     Returns:
         DataFrame with columns: streams, consumers, messages, bytes, memory, storage
     """
-    click.echo(f"Collecting {count} JetStream samples...")
-    samples = []
-    for i in range(count):
-        click.echo(f"  Sample {i+1}/{count}...")
-        metrics = asyncio.run(fetch_jetstream_jsz(base_url))
-        samples.append({
-            'streams': metrics.streams,
-            'consumers': metrics.consumers,
-            'messages': metrics.messages,
-            'bytes': metrics.bytes,
-            'memory': metrics.memory,
-            'storage': metrics.storage,
-        })
-        if i < count - 1:  # Don't sleep after last sample
-            time.sleep(interval)
-
-    return pd.DataFrame(samples)
+    return collect_samples(fetch_jetstream_jsz, base_url, count, interval, "JetStream")
 
 
 def collect_docker_samples(container_name: str, count: int, interval: float) -> pd.DataFrame:
