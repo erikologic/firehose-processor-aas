@@ -71,3 +71,24 @@ def test_run_command_requires_scenario_option():
     assert result.exit_code == 2  # Click usage error
     assert 'Missing option' in result.output
     assert '--scenario' in result.output
+
+
+def test_run_command_accepts_output_dir_option():
+    """Test that --output-dir option exists and is accepted with a custom value.
+
+    Validates that:
+    - Command recognizes --output-dir option
+    - Custom output directory path is accepted
+    - Command executes successfully with both options provided
+
+    This establishes that users can specify where benchmark results should be
+    written, enabling organized storage of multiple benchmark runs.
+    """
+    # Arrange
+    runner = CliRunner()
+
+    # Act
+    result = runner.invoke(cli, ['run', '--scenario', '1.1', '--output-dir', 'custom/path'])
+
+    # Assert
+    assert result.exit_code == 0  # Success, option recognized and accepted
