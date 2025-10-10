@@ -8,11 +8,10 @@ appropriate help information.
 import os
 import pytest
 import pandas as pd
-from click.testing import CliRunner
 from benchmark.cli import cli
 
 
-def test_cli_responds_to_help():
+def test_cli_responds_to_help(cli_runner):
     """Test that CLI exists and responds to --help flag.
 
     Validates that:
@@ -20,18 +19,15 @@ def test_cli_responds_to_help():
     - Help flag returns successful exit code (0)
     - Help output contains the tool name for user orientation
     """
-    # Arrange
-    runner = CliRunner()
-
     # Act
-    result = runner.invoke(cli, ['--help'])
+    result = cli_runner.invoke(cli, ['--help'])
 
     # Assert
     assert result.exit_code == 0
     assert 'Firehose Processor Benchmark Tool' in result.output
 
 
-def test_run_command_exists_and_responds_to_help():
+def test_run_command_exists_and_responds_to_help(cli_runner):
     """Test that 'run' command is registered and accessible.
 
     Validates that:
@@ -42,18 +38,15 @@ def test_run_command_exists_and_responds_to_help():
     This test establishes that the 'run' command is available for executing
     single benchmark scenarios, which is the core functionality of the tool.
     """
-    # Arrange
-    runner = CliRunner()
-
     # Act
-    result = runner.invoke(cli, ['run', '--help'])
+    result = cli_runner.invoke(cli, ['run', '--help'])
 
     # Assert
     assert result.exit_code == 0
     assert 'Run a single benchmark scenario' in result.output
 
 
-def test_run_command_requires_scenario_option():
+def test_run_command_requires_scenario_option(cli_runner):
     """Test that run command fails when --scenario option is not provided.
 
     Validates that:
@@ -64,11 +57,8 @@ def test_run_command_requires_scenario_option():
     This enforces that every benchmark run must explicitly specify which
     scenario to execute, preventing accidental runs with undefined behavior.
     """
-    # Arrange
-    runner = CliRunner()
-
     # Act
-    result = runner.invoke(cli, ['run'])
+    result = cli_runner.invoke(cli, ['run'])
 
     # Assert
     assert result.exit_code == 2  # Click usage error
@@ -76,7 +66,7 @@ def test_run_command_requires_scenario_option():
     assert '--scenario' in result.output
 
 
-def test_run_command_accepts_output_dir_option():
+def test_run_command_accepts_output_dir_option(cli_runner):
     """Test that --output-dir option exists and is accepted with a custom value.
 
     Validates that:
@@ -87,17 +77,14 @@ def test_run_command_accepts_output_dir_option():
     This establishes that users can specify where benchmark results should be
     written, enabling organized storage of multiple benchmark runs.
     """
-    # Arrange
-    runner = CliRunner()
-
     # Act
-    result = runner.invoke(cli, ['run', '--scenario', '1.1', '--output-dir', 'custom/path'])
+    result = cli_runner.invoke(cli, ['run', '--scenario', '1.1', '--output-dir', 'custom/path'])
 
     # Assert
     assert result.exit_code == 0  # Success, option recognized and accepted
 
 
-def test_run_command_outputs_scenario_being_executed():
+def test_run_command_outputs_scenario_being_executed(cli_runner):
     """Test that run command acknowledges which scenario is being executed.
 
     Validates that:
@@ -108,11 +95,8 @@ def test_run_command_outputs_scenario_being_executed():
     This establishes the foundation for command execution visibility,
     ensuring users know what the tool is doing when they invoke it.
     """
-    # Arrange
-    runner = CliRunner()
-
     # Act
-    result = runner.invoke(cli, ['run', '--scenario', '1.1'])
+    result = cli_runner.invoke(cli, ['run', '--scenario', '1.1'])
 
     # Assert
     assert result.exit_code == 0
@@ -120,7 +104,7 @@ def test_run_command_outputs_scenario_being_executed():
     assert 'Running' in result.output or 'Executing' in result.output
 
 
-def test_run_command_collects_single_nats_sample():
+def test_run_command_collects_single_nats_sample(cli_runner):
     """Test that run command fetches one NATS sample and displays metrics.
 
     Validates that:
@@ -133,11 +117,8 @@ def test_run_command_collects_single_nats_sample():
 
     Note: This is an integration test requiring NATS running on localhost:8222
     """
-    # Arrange
-    runner = CliRunner()
-
     # Act
-    result = runner.invoke(cli, ['run', '--scenario', '1.1'])
+    result = cli_runner.invoke(cli, ['run', '--scenario', '1.1'])
 
     # Assert
     assert result.exit_code == 0
@@ -147,7 +128,7 @@ def test_run_command_collects_single_nats_sample():
     assert 'cpu' in result.output or 'mem' in result.output or 'bytes' in result.output
 
 
-def test_run_command_collects_multiple_samples_and_displays_aggregated_metrics():
+def test_run_command_collects_multiple_samples_and_displays_aggregated_metrics(cli_runner):
     """Test that run command collects 3 NATS samples and displays aggregated statistics.
 
     Validates that:
@@ -161,11 +142,8 @@ def test_run_command_collects_multiple_samples_and_displays_aggregated_metrics()
 
     Note: This is an integration test requiring NATS running on localhost:8222
     """
-    # Arrange
-    runner = CliRunner()
-
     # Act
-    result = runner.invoke(cli, ['run', '--scenario', '1.1'])
+    result = cli_runner.invoke(cli, ['run', '--scenario', '1.1'])
 
     # Assert
     assert result.exit_code == 0
@@ -175,7 +153,7 @@ def test_run_command_collects_multiple_samples_and_displays_aggregated_metrics()
     assert '_avg' in result.output or '_total' in result.output or '_per_consumer' in result.output
 
 
-def test_run_command_writes_aggregated_results_to_csv_file():
+def test_run_command_writes_aggregated_results_to_csv_file(cli_runner):
     """Test that run command creates CSV file with aggregated metrics.
 
     Validates that:
@@ -188,12 +166,9 @@ def test_run_command_writes_aggregated_results_to_csv_file():
 
     Note: This is an integration test requiring NATS running on localhost:8222
     """
-    # Arrange
-    runner = CliRunner()
-
     # Act - use isolated_filesystem for clean test environment
-    with runner.isolated_filesystem():
-        result = runner.invoke(cli, ['run', '--scenario', '1.1', '--output-dir', 'test_results'])
+    with cli_runner.isolated_filesystem():
+        result = cli_runner.invoke(cli, ['run', '--scenario', '1.1', '--output-dir', 'test_results'])
 
         # Assert
         assert result.exit_code == 0
