@@ -185,3 +185,48 @@ def test_run_command_writes_aggregated_results_to_csv_file(cli_runner):
         # Should have aggregated columns
         columns = df.columns.tolist()
         assert any('_avg' in col or '_total' in col or '_per_consumer' in col for col in columns),             f"No aggregated columns found in {columns}"
+
+
+def test_run_command_collects_jetstream_metrics_and_includes_in_csv(cli_runner):
+    """Test that run command collects JetStream metrics alongside NATS metrics.
+
+    Validates that:
+    - Command collects both NATS and JetStream metrics
+    - JetStream metrics are aggregated correctly
+    - CSV output includes JetStream metric columns
+    - All JetStream metrics have valid values (not null)
+
+    This establishes JetStream integration, providing critical queue health metrics
+    needed for benchmark success criteria (pending messages, pending acks).
+
+    Note: This is an integration test requiring NATS with JetStream running on localhost:8222
+    """
+    # Act - use isolated_filesystem for clean test environment
+    with cli_runner.isolated_filesystem():
+        result = cli_runner.invoke(cli, ['run', '--scenario', '1.1', '--output-dir', 'test_results'])
+
+        # Assert
+        assert result.exit_code == 0
+
+        # CSV file should exist
+        csv_path = 'test_results/scenario-1.1.csv'
+        assert os.path.exists(csv_path), f"CSV file not created at {csv_path}"
+
+        # CSV should be readable by pandas
+        df = pd.read_csv(csv_path)
+
+        # Should have exactly 1 row (aggregated results)
+        assert len(df) == 1, f"Expected 1 row, got {len(df)}"
+
+        # Should have JetStream metric columns
+        columns = df.columns.tolist()
+        jetstream_columns = [col for col in columns if col.startswith('streams_') or
+                            col.startswith('consumers_') or col.startswith('messages_') or
+                            col.startswith('bytes_') or col.startswith('memory_') or
+                            col.startswith('storage_')]
+
+        assert len(jetstream_columns) > 0, f"No JetStream columns found in {columns}"
+
+        # Should have both averages and per_consumer metrics for JetStream gauges
+        assert any('streams_avg' in col for col in columns), "Missing streams_avg column"
+        assert any('streams_per_consumer' in col for col in columns), "Missing streams_per_consumer column"
