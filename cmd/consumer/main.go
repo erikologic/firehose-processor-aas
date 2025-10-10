@@ -110,7 +110,11 @@ func run(cctx *cli.Context) error {
 		for _, c := range consumers {
 			total += c.GetTotalCount()
 		}
-		fmt.Fprintf(w, "%d", total)
+
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		fmt.Fprintf(w, "# HELP consumer_messages_processed_total Total number of messages processed by all consumers\n")
+		fmt.Fprintf(w, "# TYPE consumer_messages_processed_total counter\n")
+		fmt.Fprintf(w, "consumer_messages_processed_total %d\n", total)
 	})
 
 	go func() {
