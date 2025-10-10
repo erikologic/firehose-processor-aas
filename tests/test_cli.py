@@ -5,6 +5,7 @@ Tests for the command-line interface entry point of the Firehose Processor Bench
 These tests validate that the CLI exists, responds to standard commands, and provides
 appropriate help information.
 """
+import pytest
 from click.testing import CliRunner
 from benchmark.cli import cli
 
@@ -115,3 +116,30 @@ def test_run_command_outputs_scenario_being_executed():
     assert result.exit_code == 0
     assert '1.1' in result.output
     assert 'Running' in result.output or 'Executing' in result.output
+
+
+def test_run_command_collects_single_nats_sample():
+    """Test that run command fetches one NATS sample and displays metrics.
+
+    Validates that:
+    - Command integrates with NATS fetcher
+    - Actual metrics are collected from running NATS service
+    - Metric values are displayed in output (cpu, mem, etc.)
+
+    This establishes the foundation for metrics collection integration,
+    connecting CLI execution to our existing fetcher infrastructure.
+
+    Note: This is an integration test requiring NATS running on localhost:8222
+    """
+    # Arrange
+    runner = CliRunner()
+
+    # Act
+    result = runner.invoke(cli, ['run', '--scenario', '1.1'])
+
+    # Assert
+    assert result.exit_code == 0
+    # Should contain reference to NATS metrics
+    assert 'NATS' in result.output or 'nats' in result.output
+    # Should display at least some metric values (check for common metric names)
+    assert 'cpu' in result.output or 'mem' in result.output or 'bytes' in result.output
