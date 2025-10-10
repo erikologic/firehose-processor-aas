@@ -1,8 +1,8 @@
 import pytest
 import pandas as pd
 import asyncio
-from benchmark.fetchers import fetch_nats_varz
-from benchmark.aggregators import aggregate_nats_metrics
+from benchmark.fetchers import fetch_nats_varz, fetch_jetstream_jsz
+from benchmark.aggregators import aggregate_nats_metrics, aggregate_jetstream_metrics
 
 
 # Test configuration
@@ -120,3 +120,66 @@ def test_aggregate_nats_metrics_should_raise_error_for_negative_consumers():
     # Act & Assert - should raise ValueError
     with pytest.raises(ValueError, match="n_consumers must be greater than 0"):
         aggregate_nats_metrics(df, -10)
+
+
+@pytest.mark.asyncio
+async def test_aggregate_jetstream_metrics_should_calculate_averages_and_totals():
+    """
+    Collect real JetStream samples and aggregate them using pandas.
+
+    Aggregation logic:
+    - Gauges (streams, consumers, memory, storage): Calculate average across samples
+    - Counters (messages, bytes): Calculate delta (last - first)
+    - Per-consumer metrics: Divide gauge averages by n_consumers
+
+    Metric classification:
+    - Gauges: streams, consumers, memory, storage (snapshot values)
+    - Counters: messages, bytes (cumulative values)
+    """
+    # Arrange - collect 3 real samples from JetStream
+    samples = []
+    for _ in range(3):
+        metrics = await fetch_jetstream_jsz(NATS_BASE_URL)
+        samples.append({
+            'streams': metrics.streams,
+            'consumers': metrics.consumers,
+            'messages': metrics.messages,
+            'bytes': metrics.bytes,
+            'memory': metrics.memory,
+            'storage': metrics.storage,
+        })
+        await asyncio.sleep(SAMPLE_INTERVAL_SECONDS)  # Wait between samples
+
+    df = pd.DataFrame(samples)
+
+    # Act - aggregate the samples
+    result = aggregate_jetstream_metrics(df, N_CONSUMERS)
+
+    # Assert - result should be a dictionary with aggregated metrics
+    assert isinstance(result, dict)
+
+    # Assert - Gauge metrics: averages
+    assert 'streams_avg' in result
+    assert 'consumers_avg' in result
+    assert 'memory_avg' in result
+    assert 'storage_avg' in result
+    assert result['streams_avg'] >= 0
+    assert result['consumers_avg'] >= 0
+    assert result['memory_avg'] >= 0
+    assert result['storage_avg'] >= 0
+
+    # Assert - Counter metrics: totals (delta)
+    assert 'messages_total' in result
+    assert 'bytes_total' in result
+    assert result['messages_total'] >= 0
+    assert result['bytes_total'] >= 0
+
+    # Assert - Per-consumer metrics (gauges divided by n_consumers)
+    assert 'streams_per_consumer' in result
+    assert 'consumers_per_consumer' in result
+    assert 'memory_per_consumer' in result
+    assert 'storage_per_consumer' in result
+    assert result['streams_per_consumer'] == result['streams_avg'] / N_CONSUMERS
+    assert result['consumers_per_consumer'] == result['consumers_avg'] / N_CONSUMERS
+    assert result['memory_per_consumer'] == result['memory_avg'] / N_CONSUMERS
+    assert result['storage_per_consumer'] == result['storage_avg'] / N_CONSUMERS
