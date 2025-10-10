@@ -6,8 +6,10 @@ Command-line interface for running benchmark scenarios and analyzing results.
 import asyncio
 import os
 import time
+from typing import Callable, Awaitable
 import pandas as pd
 import click
+from pydantic import BaseModel
 from benchmark.fetchers import fetch_nats_varz, fetch_jetstream_jsz, fetch_docker_stats
 from benchmark.aggregators import aggregate_nats_metrics, aggregate_jetstream_metrics, aggregate_docker_stats
 
