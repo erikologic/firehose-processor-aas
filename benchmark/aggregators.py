@@ -135,3 +135,64 @@ def aggregate_docker_stats(df: pd.DataFrame, n_consumers: int) -> dict:
         ValueError: If DataFrame is empty or n_consumers <= 0
     """
     return aggregate_metrics(df, n_consumers, DOCKER_GAUGE_METRICS, DOCKER_COUNTER_METRICS, prefix="docker_")
+
+
+def aggregate_shuffler_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
+    """
+    Aggregate Shuffler application metrics samples into summary statistics.
+
+    Args:
+        df: DataFrame with columns: firehose_messages_read_total, firehose_cursor_position
+        n_consumers: Number of consumers for per-consumer calculations
+
+    Returns:
+        Dictionary with aggregated metrics:
+        - shuffler_messages_read_total: Total messages read from ATProto firehose (delta)
+        - Note: cursor_position is a gauge but not useful to average, so it's omitted
+
+    Raises:
+        ValueError: If DataFrame is empty or n_consumers <= 0
+    """
+    # Input validation
+    if df.empty:
+        raise ValueError("DataFrame cannot be empty")
+    if n_consumers <= 0:
+        raise ValueError("n_consumers must be greater than 0")
+
+    # Counter metric: calculate delta (last - first)
+    messages_read_total = df['firehose_messages_read_total'].iloc[-1] - df['firehose_messages_read_total'].iloc[0]
+
+    return {
+        'shuffler_messages_read_total': messages_read_total,
+    }
+
+
+def aggregate_consumer_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
+    """
+    Aggregate Consumer service application metrics samples into summary statistics.
+
+    Args:
+        df: DataFrame with columns: consumer_messages_processed_total
+        n_consumers: Number of consumers for per-consumer calculations
+
+    Returns:
+        Dictionary with aggregated metrics:
+        - consumer_messages_total: Total messages processed by all consumers (delta)
+        - consumer_messages_per_consumer: Average messages processed per consumer
+
+    Raises:
+        ValueError: If DataFrame is empty or n_consumers <= 0
+    """
+    # Input validation
+    if df.empty:
+        raise ValueError("DataFrame cannot be empty")
+    if n_consumers <= 0:
+        raise ValueError("n_consumers must be greater than 0")
+
+    # Counter metric: calculate delta (last - first)
+    messages_processed_total = df['consumer_messages_processed_total'].iloc[-1] - df['consumer_messages_processed_total'].iloc[0]
+
+    return {
+        'consumer_messages_total': messages_processed_total,
+        'consumer_messages_per_consumer': messages_processed_total / n_consumers,
+    }

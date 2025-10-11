@@ -1,7 +1,14 @@
 import httpx
 import asyncio
 import json
-from benchmark.models import NatsVarzMetrics, JetStreamJszMetrics, DockerStatsMetrics
+import re
+from benchmark.models import (
+    NatsVarzMetrics,
+    JetStreamJszMetrics,
+    DockerStatsMetrics,
+    ShufflerMetrics,
+    ConsumerMetrics
+)
 
 
 async def fetch_nats_varz(base_url: str) -> NatsVarzMetrics:
@@ -68,3 +75,53 @@ async def fetch_docker_stats(container_name: str) -> DockerStatsMetrics:
         net_in_bytes=net_in_bytes,
         net_out_bytes=net_out_bytes
     )
+
+
+def _parse_prometheus_metric(text: str, metric_name: str) -> float:
+    """Parse a Prometheus metric value from text format
+
+    Example input:
+        # HELP firehose_messages_read_total Total messages
+        # TYPE firehose_messages_read_total counter
+        firehose_messages_read_total 12345
+
+    Returns: 12345.0
+    """
+    pattern = rf'^{re.escape(metric_name)}\s+([0-9.]+)'
+    for line in text.split('\n'):
+        if line.startswith('#'):
+            continue
+        match = re.match(pattern, line)
+        if match:
+            return float(match.group(1))
+    raise ValueError(f"Metric {metric_name} not found in Prometheus output")
+
+
+async def fetch_shuffler_metrics(base_url: str) -> ShufflerMetrics:
+    """Fetch Shuffler application metrics from /metrics endpoint (Prometheus format)"""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{base_url}/metrics")
+        response.raise_for_status()
+        text = response.text
+
+        messages_read = _parse_prometheus_metric(text, "firehose_messages_read_total")
+        cursor_position = _parse_prometheus_metric(text, "firehose_cursor_position")
+
+        return ShufflerMetrics(
+            firehose_messages_read_total=int(messages_read),
+            firehose_cursor_position=int(cursor_position)
+        )
+
+
+async def fetch_consumer_metrics(base_url: str) -> ConsumerMetrics:
+    """Fetch Consumer service metrics from /metrics endpoint (Prometheus format)"""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{base_url}/metrics")
+        response.raise_for_status()
+        text = response.text
+
+        messages_processed = _parse_prometheus_metric(text, "consumer_messages_processed_total")
+
+        return ConsumerMetrics(
+            consumer_messages_processed_total=int(messages_processed)
+        )

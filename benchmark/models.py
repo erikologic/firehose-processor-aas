@@ -28,3 +28,14 @@ class DockerStatsMetrics(BaseModel):
     mem_usage_bytes: int = Field(gt=0, description="Memory usage in bytes")
     net_in_bytes: int = Field(ge=0, description="Network bytes received")
     net_out_bytes: int = Field(ge=0, description="Network bytes sent")
+
+
+class ShufflerMetrics(BaseModel):
+    """Shuffler (firehose consumer) application metrics from /metrics endpoint"""
+    firehose_messages_read_total: int = Field(ge=0, description="Total messages read from ATProto firehose")
+    firehose_cursor_position: int = Field(ge=0, description="Current cursor position (sequence number)")
+
+
+class ConsumerMetrics(BaseModel):
+    """Consumer service application metrics from /metrics endpoint"""
+    consumer_messages_processed_total: int = Field(ge=0, description="Total messages processed by all consumers")
