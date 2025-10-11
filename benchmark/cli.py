@@ -151,9 +151,6 @@ def run(scenario, output_dir, duration):
     click.echo(f"Output directory: {output_dir}")
     click.echo(f"Test duration: {duration}s ({sample_count} samples @ {SAMPLE_INTERVAL_SECONDS}s interval)")
 
-    # Track test start time
-    start_time = time.time()
-
     # Collect and aggregate NATS metrics
     nats_df = collect_nats_samples(DEFAULT_NATS_URL, sample_count, SAMPLE_INTERVAL_SECONDS)
     nats_aggregated = aggregate_nats_metrics(nats_df, DEFAULT_N_CONSUMERS)
@@ -166,9 +163,9 @@ def run(scenario, output_dir, duration):
     docker_df = collect_docker_samples(DEFAULT_DOCKER_CONTAINER, sample_count, SAMPLE_INTERVAL_SECONDS)
     docker_aggregated = aggregate_docker_stats(docker_df, DEFAULT_N_CONSUMERS)
 
-    # Calculate test duration
-    end_time = time.time()
-    test_duration_sec = end_time - start_time
+    # Calculate test duration from samples collected (not wall clock time)
+    # This represents the actual test window: (sample_count - 1) intervals between samples
+    test_duration_sec = (sample_count - 1) * SAMPLE_INTERVAL_SECONDS
 
     # Merge all metrics with configuration metadata
     aggregated = {

@@ -43,27 +43,27 @@ async def test_aggregate_nats_metrics_should_calculate_averages_and_totals():
     # Assert - result should be a dictionary with aggregated metrics
     assert isinstance(result, dict)
 
-    # Assert - Gauge metrics: averages
-    assert 'cpu_avg' in result
-    assert 'mem_avg' in result
-    assert result['cpu_avg'] >= 0
-    assert result['mem_avg'] > 0
+    # Assert - Gauge metrics: averages (prefixed with "nats_")
+    assert 'nats_cpu_avg' in result
+    assert 'nats_mem_avg' in result
+    assert result['nats_cpu_avg'] >= 0
+    assert result['nats_mem_avg'] > 0
 
-    # Assert - Counter metrics: totals (delta)
-    assert 'in_msgs_total' in result
-    assert 'out_msgs_total' in result
-    assert 'in_bytes_total' in result
-    assert 'out_bytes_total' in result
-    assert result['in_msgs_total'] >= 0
-    assert result['out_msgs_total'] >= 0
-    assert result['in_bytes_total'] >= 0
-    assert result['out_bytes_total'] >= 0
+    # Assert - Counter metrics: totals (delta) (prefixed with "nats_")
+    assert 'nats_in_msgs_total' in result
+    assert 'nats_out_msgs_total' in result
+    assert 'nats_in_bytes_total' in result
+    assert 'nats_out_bytes_total' in result
+    assert result['nats_in_msgs_total'] >= 0
+    assert result['nats_out_msgs_total'] >= 0
+    assert result['nats_in_bytes_total'] >= 0
+    assert result['nats_out_bytes_total'] >= 0
 
-    # Assert - Per-consumer metrics
-    assert 'cpu_per_consumer' in result
-    assert 'mem_per_consumer' in result
-    assert result['cpu_per_consumer'] == result['cpu_avg'] / N_CONSUMERS
-    assert result['mem_per_consumer'] == result['mem_avg'] / N_CONSUMERS
+    # Assert - Per-consumer metrics (prefixed with "nats_")
+    assert 'nats_cpu_per_consumer' in result
+    assert 'nats_mem_per_consumer' in result
+    assert result['nats_cpu_per_consumer'] == result['nats_cpu_avg'] / N_CONSUMERS
+    assert result['nats_mem_per_consumer'] == result['nats_mem_avg'] / N_CONSUMERS
 
 
 def test_aggregate_nats_metrics_should_raise_error_for_empty_dataframe():
@@ -157,33 +157,33 @@ async def test_aggregate_jetstream_metrics_should_calculate_averages_and_totals(
     # Assert - result should be a dictionary with aggregated metrics
     assert isinstance(result, dict)
 
-    # Assert - All metrics are gauges: check averages
-    assert 'streams_avg' in result
-    assert 'consumers_avg' in result
-    assert 'messages_avg' in result
-    assert 'bytes_avg' in result
-    assert 'memory_avg' in result
-    assert 'storage_avg' in result
-    assert result['streams_avg'] >= 0
-    assert result['consumers_avg'] >= 0
-    assert result['messages_avg'] >= 0
-    assert result['bytes_avg'] >= 0
-    assert result['memory_avg'] >= 0
-    assert result['storage_avg'] >= 0
+    # Assert - All metrics are gauges: check averages (prefixed with "js_")
+    assert 'js_streams_avg' in result
+    assert 'js_consumers_avg' in result
+    assert 'js_messages_avg' in result
+    assert 'js_bytes_avg' in result
+    assert 'js_memory_avg' in result
+    assert 'js_storage_avg' in result
+    assert result['js_streams_avg'] >= 0
+    assert result['js_consumers_avg'] >= 0
+    assert result['js_messages_avg'] >= 0
+    assert result['js_bytes_avg'] >= 0
+    assert result['js_memory_avg'] >= 0
+    assert result['js_storage_avg'] >= 0
 
-    # Assert - Per-consumer metrics (all gauges divided by n_consumers)
-    assert 'streams_per_consumer' in result
-    assert 'consumers_per_consumer' in result
-    assert 'messages_per_consumer' in result
-    assert 'bytes_per_consumer' in result
-    assert 'memory_per_consumer' in result
-    assert 'storage_per_consumer' in result
-    assert result['streams_per_consumer'] == result['streams_avg'] / N_CONSUMERS
-    assert result['consumers_per_consumer'] == result['consumers_avg'] / N_CONSUMERS
-    assert result['messages_per_consumer'] == result['messages_avg'] / N_CONSUMERS
-    assert result['bytes_per_consumer'] == result['bytes_avg'] / N_CONSUMERS
-    assert result['memory_per_consumer'] == result['memory_avg'] / N_CONSUMERS
-    assert result['storage_per_consumer'] == result['storage_avg'] / N_CONSUMERS
+    # Assert - Per-consumer metrics (all gauges divided by n_consumers) (prefixed with "js_")
+    assert 'js_streams_per_consumer' in result
+    assert 'js_consumers_per_consumer' in result
+    assert 'js_messages_per_consumer' in result
+    assert 'js_bytes_per_consumer' in result
+    assert 'js_memory_per_consumer' in result
+    assert 'js_storage_per_consumer' in result
+    assert result['js_streams_per_consumer'] == result['js_streams_avg'] / N_CONSUMERS
+    assert result['js_consumers_per_consumer'] == result['js_consumers_avg'] / N_CONSUMERS
+    assert result['js_messages_per_consumer'] == result['js_messages_avg'] / N_CONSUMERS
+    assert result['js_bytes_per_consumer'] == result['js_bytes_avg'] / N_CONSUMERS
+    assert result['js_memory_per_consumer'] == result['js_memory_avg'] / N_CONSUMERS
+    assert result['js_storage_per_consumer'] == result['js_storage_avg'] / N_CONSUMERS
 
 
 @pytest.mark.asyncio
@@ -222,20 +222,20 @@ async def test_aggregate_docker_stats_should_calculate_averages_and_deltas():
     # Assert - result should be a dictionary with aggregated metrics
     assert isinstance(result, dict)
 
-    # Assert - Gauge metrics: averages
-    assert 'cpu_percent_avg' in result
-    assert 'mem_usage_bytes_avg' in result
-    assert result['cpu_percent_avg'] >= 0
-    assert result['mem_usage_bytes_avg'] >= 0
+    # Assert - Gauge metrics: averages (prefixed with "docker_")
+    assert 'docker_cpu_percent_avg' in result
+    assert 'docker_mem_usage_bytes_avg' in result
+    assert result['docker_cpu_percent_avg'] >= 0
+    assert result['docker_mem_usage_bytes_avg'] >= 0
 
-    # Assert - Counter metrics: totals (delta)
-    assert 'net_in_bytes_total' in result
-    assert 'net_out_bytes_total' in result
-    assert result['net_in_bytes_total'] >= 0
-    assert result['net_out_bytes_total'] >= 0
+    # Assert - Counter metrics: totals (delta) (prefixed with "docker_")
+    assert 'docker_net_in_bytes_total' in result
+    assert 'docker_net_out_bytes_total' in result
+    assert result['docker_net_in_bytes_total'] >= 0
+    assert result['docker_net_out_bytes_total'] >= 0
 
-    # Assert - Per-consumer metrics
-    assert 'cpu_percent_per_consumer' in result
-    assert 'mem_usage_bytes_per_consumer' in result
-    assert result['cpu_percent_per_consumer'] == result['cpu_percent_avg'] / N_CONSUMERS
-    assert result['mem_usage_bytes_per_consumer'] == result['mem_usage_bytes_avg'] / N_CONSUMERS
+    # Assert - Per-consumer metrics (prefixed with "docker_")
+    assert 'docker_cpu_percent_per_consumer' in result
+    assert 'docker_mem_usage_bytes_per_consumer' in result
+    assert result['docker_cpu_percent_per_consumer'] == result['docker_cpu_percent_avg'] / N_CONSUMERS
+    assert result['docker_mem_usage_bytes_per_consumer'] == result['docker_mem_usage_bytes_avg'] / N_CONSUMERS

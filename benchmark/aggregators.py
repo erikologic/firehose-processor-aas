@@ -13,7 +13,7 @@ DOCKER_GAUGE_METRICS = ['cpu_percent', 'mem_usage_bytes']  # Gauges: snapshots
 DOCKER_COUNTER_METRICS = ['net_in_bytes', 'net_out_bytes']  # Counters: cumulative
 
 
-def aggregate_metrics(df: pd.DataFrame, n_consumers: int, gauge_metrics: list, counter_metrics: list) -> dict:
+def aggregate_metrics(df: pd.DataFrame, n_consumers: int, gauge_metrics: list, counter_metrics: list, prefix: str = "") -> dict:
     """
     Generic metric aggregation for time-series samples.
 
@@ -26,11 +26,12 @@ def aggregate_metrics(df: pd.DataFrame, n_consumers: int, gauge_metrics: list, c
         n_consumers: Number of consumers for per-consumer calculations
         gauge_metrics: List of gauge metric column names
         counter_metrics: List of counter metric column names
+        prefix: Optional prefix to add to all metric names (e.g., "nats_", "js_")
 
     Returns:
         Dictionary with aggregated metrics:
-        - For each gauge: {metric}_avg and {metric}_per_consumer
-        - For each counter: {metric}_total
+        - For each gauge: {prefix}{metric}_avg and {prefix}{metric}_per_consumer
+        - For each counter: {prefix}{metric}_total
 
     Raises:
         ValueError: If DataFrame is empty or n_consumers <= 0
@@ -45,13 +46,13 @@ def aggregate_metrics(df: pd.DataFrame, n_consumers: int, gauge_metrics: list, c
     result = {}
     for metric in gauge_metrics:
         avg_value = df[metric].mean()
-        result[f'{metric}_avg'] = avg_value
-        result[f'{metric}_per_consumer'] = avg_value / n_consumers
+        result[f'{prefix}{metric}_avg'] = avg_value
+        result[f'{prefix}{metric}_per_consumer'] = avg_value / n_consumers
 
     # Calculate totals for counter metrics (delta: last - first)
     for metric in counter_metrics:
         total_value = df[metric].iloc[-1] - df[metric].iloc[0]
-        result[f'{metric}_total'] = total_value
+        result[f'{prefix}{metric}_total'] = total_value
 
     return result
 
@@ -65,7 +66,7 @@ def aggregate_nats_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
         n_consumers: Number of consumers for per-consumer calculations
 
     Returns:
-        Dictionary with aggregated metrics:
+        Dictionary with aggregated metrics (prefixed with "nats_"):
         - Gauges (cpu, mem): averages
         - Counters (msgs, bytes): totals (delta between last and first)
         - Per-consumer: divided by n_consumers
@@ -73,7 +74,7 @@ def aggregate_nats_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
     Raises:
         ValueError: If DataFrame is empty or n_consumers <= 0
     """
-    return aggregate_metrics(df, n_consumers, GAUGE_METRICS, COUNTER_METRICS)
+    return aggregate_metrics(df, n_consumers, GAUGE_METRICS, COUNTER_METRICS, prefix="nats_")
 
 
 def aggregate_jetstream_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
@@ -85,14 +86,14 @@ def aggregate_jetstream_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
         n_consumers: Number of consumers for per-consumer calculations
 
     Returns:
-        Dictionary with aggregated metrics:
+        Dictionary with aggregated metrics (prefixed with "js_"):
         - All metrics are gauges (snapshot values): averages calculated
         - Per-consumer: each average divided by n_consumers
 
     Raises:
         ValueError: If DataFrame is empty or n_consumers <= 0
     """
-    return aggregate_metrics(df, n_consumers, JETSTREAM_GAUGE_METRICS, JETSTREAM_COUNTER_METRICS)
+    return aggregate_metrics(df, n_consumers, JETSTREAM_GAUGE_METRICS, JETSTREAM_COUNTER_METRICS, prefix="js_")
 
 
 def aggregate_docker_stats(df: pd.DataFrame, n_consumers: int) -> dict:
@@ -104,7 +105,7 @@ def aggregate_docker_stats(df: pd.DataFrame, n_consumers: int) -> dict:
         n_consumers: Number of consumers for per-consumer calculations
 
     Returns:
-        Dictionary with aggregated metrics:
+        Dictionary with aggregated metrics (prefixed with "docker_"):
         - Gauges (cpu_percent, mem_usage_bytes): averages
         - Counters (net_in_bytes, net_out_bytes): totals (delta between last and first)
         - Per-consumer: gauge averages divided by n_consumers
@@ -112,4 +113,4 @@ def aggregate_docker_stats(df: pd.DataFrame, n_consumers: int) -> dict:
     Raises:
         ValueError: If DataFrame is empty or n_consumers <= 0
     """
-    return aggregate_metrics(df, n_consumers, DOCKER_GAUGE_METRICS, DOCKER_COUNTER_METRICS)
+    return aggregate_metrics(df, n_consumers, DOCKER_GAUGE_METRICS, DOCKER_COUNTER_METRICS, prefix="docker_")
