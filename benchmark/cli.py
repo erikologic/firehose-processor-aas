@@ -22,77 +22,64 @@ DEFAULT_NATS_URL = "http://localhost:8222"
 DEFAULT_DOCKER_CONTAINER = "fpaas-nats"
 
 
-def collect_samples(
-    fetcher: Callable[[str], Awaitable[BaseModel]],
-    source: str,
+async def collect_all_metrics_sample(nats_url: str, container_name: str) -> dict:
+    """Collect one sample of all metrics concurrently at the same timestamp.
+
+    Args:
+        nats_url: NATS monitoring endpoint URL
+        container_name: Docker container name to monitor
+
+    Returns:
+        Dictionary with all metrics from NATS, JetStream, and Docker
+    """
+    # Fetch all metrics concurrently
+    nats_task = fetch_nats_varz(nats_url)
+    js_task = fetch_jetstream_jsz(nats_url)
+    docker_task = fetch_docker_stats(container_name)
+
+    nats_metrics, js_metrics, docker_metrics = await asyncio.gather(
+        nats_task, js_task, docker_task
+    )
+
+    # Combine all metrics into a single dict
+    sample = {}
+    sample.update({f"nats_{k}": v for k, v in nats_metrics.model_dump().items()})
+    sample.update({f"js_{k}": v for k, v in js_metrics.model_dump().items()})
+    sample.update({f"docker_{k}": v for k, v in docker_metrics.model_dump().items()})
+
+    return sample
+
+
+def collect_all_samples(
+    nats_url: str,
+    container_name: str,
     count: int,
-    interval: float,
-    metric_name: str
+    interval: float
 ) -> pd.DataFrame:
-    """Collect multiple metric samples over time using a generic fetcher.
+    """Collect multiple samples of all metrics over time, with all metrics
+    sampled concurrently at each timestamp.
 
     Args:
-        fetcher: Async function that fetches metrics given a source identifier
-        source: Source identifier (URL, container name, etc.)
-        count: Number of samples to collect
-        interval: Seconds to wait between samples
-        metric_name: Display name for the metrics being collected
-
-    Returns:
-        DataFrame with columns from the Pydantic model returned by fetcher
-    """
-    click.echo(f"\nCollecting {count} {metric_name} samples...")
-    samples = []
-    for i in range(count):
-        click.echo(f"  Sample {i+1}/{count}...")
-        metrics = asyncio.run(fetcher(source))
-        samples.append(metrics.model_dump())
-        if i < count - 1:  # Don't sleep after last sample
-            time.sleep(interval)
-
-    return pd.DataFrame(samples)
-
-
-def collect_nats_samples(base_url: str, count: int, interval: float) -> pd.DataFrame:
-    """Collect multiple NATS metric samples over time.
-
-    Args:
-        base_url: NATS monitoring endpoint URL
-        count: Number of samples to collect
-        interval: Seconds to wait between samples
-
-    Returns:
-        DataFrame with columns: cpu, mem, in_msgs, out_msgs, in_bytes, out_bytes
-    """
-    return collect_samples(fetch_nats_varz, base_url, count, interval, "NATS")
-
-
-def collect_jetstream_samples(base_url: str, count: int, interval: float) -> pd.DataFrame:
-    """Collect multiple JetStream metric samples over time.
-
-    Args:
-        base_url: NATS monitoring endpoint URL
-        count: Number of samples to collect
-        interval: Seconds to wait between samples
-
-    Returns:
-        DataFrame with columns: streams, consumers, messages, bytes, memory, storage
-    """
-    return collect_samples(fetch_jetstream_jsz, base_url, count, interval, "JetStream")
-
-
-def collect_docker_samples(container_name: str, count: int, interval: float) -> pd.DataFrame:
-    """Collect multiple Docker stats samples over time.
-
-    Args:
+        nats_url: NATS monitoring endpoint URL
         container_name: Docker container name to monitor
         count: Number of samples to collect
         interval: Seconds to wait between samples
 
     Returns:
-        DataFrame with columns: container_name, cpu_percent, mem_usage_bytes, net_in_bytes, net_out_bytes
+        DataFrame with all metrics from NATS, JetStream, and Docker
     """
-    return collect_samples(fetch_docker_stats, container_name, count, interval, "Docker stats")
+    click.echo(f"\nCollecting {count} samples (all metrics concurrently @ {interval}s interval)...")
+    samples = []
+
+    for i in range(count):
+        click.echo(f"  Sample {i+1}/{count}...")
+        sample = asyncio.run(collect_all_metrics_sample(nats_url, container_name))
+        samples.append(sample)
+
+        if i < count - 1:  # Don't sleep after last sample
+            time.sleep(interval)
+
+    return pd.DataFrame(samples)
 
 
 def display_aggregated_metrics(aggregated: dict) -> None:
@@ -151,16 +138,27 @@ def run(scenario, output_dir, duration):
     click.echo(f"Output directory: {output_dir}")
     click.echo(f"Test duration: {duration}s ({sample_count} samples @ {SAMPLE_INTERVAL_SECONDS}s interval)")
 
-    # Collect and aggregate NATS metrics
-    nats_df = collect_nats_samples(DEFAULT_NATS_URL, sample_count, SAMPLE_INTERVAL_SECONDS)
+    # Collect all metrics concurrently (NATS, JetStream, Docker all at same timestamp)
+    all_samples_df = collect_all_samples(
+        DEFAULT_NATS_URL,
+        DEFAULT_DOCKER_CONTAINER,
+        sample_count,
+        SAMPLE_INTERVAL_SECONDS
+    )
+
+    # Split the combined DataFrame into separate DataFrames for aggregation
+    nats_columns = [col for col in all_samples_df.columns if col.startswith('nats_')]
+    js_columns = [col for col in all_samples_df.columns if col.startswith('js_')]
+    docker_columns = [col for col in all_samples_df.columns if col.startswith('docker_')]
+
+    # Remove prefixes for aggregation functions that expect original column names
+    nats_df = all_samples_df[nats_columns].rename(columns=lambda x: x.replace('nats_', ''))
+    js_df = all_samples_df[js_columns].rename(columns=lambda x: x.replace('js_', ''))
+    docker_df = all_samples_df[docker_columns].rename(columns=lambda x: x.replace('docker_', ''))
+
+    # Aggregate each metric type
     nats_aggregated = aggregate_nats_metrics(nats_df, DEFAULT_N_CONSUMERS)
-
-    # Collect and aggregate JetStream metrics
-    jetstream_df = collect_jetstream_samples(DEFAULT_NATS_URL, sample_count, SAMPLE_INTERVAL_SECONDS)
-    jetstream_aggregated = aggregate_jetstream_metrics(jetstream_df, DEFAULT_N_CONSUMERS)
-
-    # Collect and aggregate Docker stats
-    docker_df = collect_docker_samples(DEFAULT_DOCKER_CONTAINER, sample_count, SAMPLE_INTERVAL_SECONDS)
+    jetstream_aggregated = aggregate_jetstream_metrics(js_df, DEFAULT_N_CONSUMERS)
     docker_aggregated = aggregate_docker_stats(docker_df, DEFAULT_N_CONSUMERS)
 
     # Calculate test duration from samples collected (not wall clock time)

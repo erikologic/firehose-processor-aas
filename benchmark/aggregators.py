@@ -88,12 +88,33 @@ def aggregate_jetstream_metrics(df: pd.DataFrame, n_consumers: int) -> dict:
     Returns:
         Dictionary with aggregated metrics (prefixed with "js_"):
         - All metrics are gauges (snapshot values): averages calculated
-        - Per-consumer: each average divided by n_consumers
+        - Per-consumer calculations ONLY for buffer metrics (messages, bytes, memory)
+        - System-level metrics (streams, consumers, storage) have NO per-consumer values
 
     Raises:
         ValueError: If DataFrame is empty or n_consumers <= 0
     """
-    return aggregate_metrics(df, n_consumers, JETSTREAM_GAUGE_METRICS, JETSTREAM_COUNTER_METRICS, prefix="js_")
+    # Input validation
+    if df.empty:
+        raise ValueError("DataFrame cannot be empty")
+    if n_consumers <= 0:
+        raise ValueError("n_consumers must be greater than 0")
+
+    result = {}
+
+    # System-level metrics: only averages, NO per-consumer (conceptually invalid)
+    system_metrics = ['streams', 'consumers', 'storage']
+    for metric in system_metrics:
+        result[f'js_{metric}_avg'] = df[metric].mean()
+
+    # Buffer metrics: averages AND per-consumer (represents theoretical even distribution)
+    buffer_metrics = ['messages', 'bytes', 'memory']
+    for metric in buffer_metrics:
+        avg_value = df[metric].mean()
+        result[f'js_{metric}_avg'] = avg_value
+        result[f'js_{metric}_per_consumer'] = avg_value / n_consumers
+
+    return result
 
 
 def aggregate_docker_stats(df: pd.DataFrame, n_consumers: int) -> dict:
