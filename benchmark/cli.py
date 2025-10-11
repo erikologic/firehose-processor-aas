@@ -129,7 +129,9 @@ def cli():
 @click.option('--output-dir', default='results', help='Output directory for CSV')
 @click.option('--duration', required=True, type=int,
               help='Test duration in seconds (e.g., 300 for 5 minutes)')
-def run(scenario, output_dir, duration):
+@click.option('--consumers', default=DEFAULT_N_CONSUMERS, type=int,
+              help=f'Number of consumer instances (default: {DEFAULT_N_CONSUMERS})')
+def run(scenario, output_dir, duration, consumers):
     """Run a single benchmark scenario"""
     # Calculate sample count from duration and interval
     sample_count = int(duration / SAMPLE_INTERVAL_SECONDS)
@@ -137,6 +139,7 @@ def run(scenario, output_dir, duration):
     click.echo(f"Running scenario {scenario}...")
     click.echo(f"Output directory: {output_dir}")
     click.echo(f"Test duration: {duration}s ({sample_count} samples @ {SAMPLE_INTERVAL_SECONDS}s interval)")
+    click.echo(f"Consumers: {consumers}")
 
     # Collect all metrics concurrently (NATS, JetStream, Docker all at same timestamp)
     all_samples_df = collect_all_samples(
@@ -157,9 +160,9 @@ def run(scenario, output_dir, duration):
     docker_df = all_samples_df[docker_columns].rename(columns=lambda x: x.replace('docker_', ''))
 
     # Aggregate each metric type
-    nats_aggregated = aggregate_nats_metrics(nats_df, DEFAULT_N_CONSUMERS)
-    jetstream_aggregated = aggregate_jetstream_metrics(js_df, DEFAULT_N_CONSUMERS)
-    docker_aggregated = aggregate_docker_stats(docker_df, DEFAULT_N_CONSUMERS)
+    nats_aggregated = aggregate_nats_metrics(nats_df, consumers)
+    jetstream_aggregated = aggregate_jetstream_metrics(js_df, consumers)
+    docker_aggregated = aggregate_docker_stats(docker_df, consumers)
 
     # Calculate test duration from samples collected (not wall clock time)
     # This represents the actual test window: (sample_count - 1) intervals between samples
@@ -168,7 +171,7 @@ def run(scenario, output_dir, duration):
     # Merge all metrics with configuration metadata
     aggregated = {
         'scenario': scenario,
-        'n_consumers': DEFAULT_N_CONSUMERS,
+        'n_consumers': consumers,
         'test_duration_sec': test_duration_sec,
         **nats_aggregated,
         **jetstream_aggregated,
